@@ -83,17 +83,23 @@ function ease(a, n) {
 
 let dialogues = {
 	a: [
-		"The world was brought into destruction.",
-		"Every attempt against him by others... were taken down quickly.",
-		"One person did step up.",
+		"The world, blighted by the evils of this Earth.",
+		"The determination of the fallen again him were in vain.",
+		"A brave one stood out against the rest...",
 		"You.",
-		"One of the strongest in this land.",
-		"After the others gave up, will you still do it?",
-		"The path forward will be unforgiving.",
-		"Let's begin."
+		"One among the strongest within this treacherous land.",
+		"After all had given up hope, will you?",
+		"The path forward will be unforgiving and yields despair.",
+		"Good luck."
 	],
 	b: [
 		"Shall we try again?",
+	],
+	c: [
+		"Thank you, brave one.",
+		"The world is rescued from his oppression.",
+		"YOU WIN!",
+		"Made for Crescent Hackclub 2026",
 	]
 }
 
@@ -101,7 +107,9 @@ let pepTalk = true;
 let pepTalkInfo = {
 	line: 0,
 	lineStart: performance.now() + 1000,
-	content: dialogues.a
+	content: dialogues.a,
+	closeTime: 0,
+	closed: false
 };
 
 function letter(t, x, y, r) {
@@ -115,6 +123,11 @@ function letter(t, x, y, r) {
 }
 
 let clicked = false;
+const plr = {
+	x: 0,
+	y: 0,
+	hp: 100,
+}
 
 document.addEventListener('click', e => {
 	clicked = true;
@@ -136,14 +149,18 @@ function draw() {
 		ctx.textAlign = "center";
 		ctx.textBaseline = "middle";
 		ctx.font = "24px pixel";
-		let at = (performance.now() - pepTalkInfo.lineStart) / 1000 * 40;
+		let at = (now - pepTalkInfo.lineStart) / 1000 * 40;
 		let currentLine = pepTalkInfo.content[pepTalkInfo.line];
-		if (currentLine && clicked) {
-			if (at > currentLine.length) {
+		if (currentLine && clicked && !pepTalkInfo.closed) {
+			if ((at - 15) > currentLine.length) {
 				pepTalkInfo.line++;
-				pepTalkInfo.lineStart = performance.now();
+				pepTalkInfo.lineStart = now;
 				currentLine = pepTalkInfo.content[pepTalkInfo.line];
 				at = 0;
+				if (!currentLine) {
+					pepTalkInfo.closed = true;
+					pepTalkInfo.closeTime = now;
+				}
 			} else {
 				pepTalkInfo.lineStart = -1000000;
 			}
@@ -170,7 +187,7 @@ function draw() {
 			}
 		});
 		ctx.globalAlpha = 1;
-		if (currentLine && (at - 15) > currentLine.length) {
+		if (!pepTalkInfo.closed && currentLine && (at - 15) > currentLine.length) {
 			const y = height / 2 + pepTalkInfo.line * 32 - pepTalkInfo.content.length * 32 / 2 + 50 + Math.abs(Math.sin(performance.now() / 100)) * -4;
 			ctx.fillStyle = "#fff";
 			ctx.beginPath();
@@ -180,6 +197,21 @@ function draw() {
 			ctx.closePath();
 			ctx.fill();
 		}
+
+		if (pepTalkInfo.closed) {
+			ctx.globalAlpha = (now - pepTalkInfo.closeTime) / 2000;
+			ctx.fillStyle = "#000";
+			ctx.fillRect(0, 0, width, height);
+			if ((now - pepTalkInfo.closeTime) >= 2000) {
+				pepTalk = false;
+				pepTalkInfo.line = 0;
+				pepTalkInfo.closed = false;
+			}
+		}
+	} else {
+		pepTalk = true;
+		pepTalkInfo.lineStart = now + 1000;
+		pepTalkInfo.content = dialogues.b;
 	}
 
 	clicked = false;
