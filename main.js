@@ -150,7 +150,7 @@ function draw() {
 	const delta = now - lastFrame;
 	lastFrame = now;
 
-	const [width, height] = [main.width, main.height] = [main.clientWidth, main.clientHeight];
+	const [width, height] = [main.width, main.height] = [main.clientWidth * devicePixelRatio, main.clientHeight * devicePixelRatio];
 
 	if (pepTalk) {
 		ctx.fillStyle = "#000";
