@@ -131,7 +131,18 @@ const plr = {
 
 document.addEventListener('click', e => {
 	clicked = true;
-})
+});
+
+let keysDown = new Set();
+
+document.addEventListener('keydown', e => {
+	e.preventDefault();
+	if (!keysDown.has(e.key)) keysDown.add(e.key);
+});
+document.addEventListener('keyup', e => {
+	e.preventDefault();
+	keysDown.delete(e.key);
+});
 
 let lastFrame = performance.now();
 function draw() {
