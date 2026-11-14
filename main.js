@@ -2,6 +2,14 @@
 const main = document.getElementById('main');
 const ctx = main.getContext('2d');
 
+const audio = new AudioContext();
+
+let buffer;
+(async () => {
+	buffer = await audio.decodeAudioData(await(await fetch('last.mp3')).arrayBuffer());
+})();
+let bgm;
+
 const waitUntil = async (predicateFn) => {
 	while (!predicateFn()) {
 		await new Promise(resolve => setTimeout(resolve, 50));
@@ -9,6 +17,74 @@ const waitUntil = async (predicateFn) => {
 
 	return true;
 };
+
+function rectToCorners(rect) {
+	const cos = Math.cos(-rect.r);
+	const sin = Math.sin(-rect.r);
+	const w2 = rect.w / 2;
+	const h2 = rect.h / 2;
+
+	return [
+		{
+			x: rect.x + (-w2 * cos - -h2 * sin),
+			y: rect.y + (-w2 * sin + -h2 * cos)
+		},
+		{
+			x: rect.x + (w2 * cos - -h2 * sin),
+			y: rect.y + (w2 * sin + -h2 * cos)
+		},
+		{
+			x: rect.x + (w2 * cos - h2 * sin),
+			y: rect.y + (w2 * sin + h2 * cos)
+		},
+		{
+			x: rect.x + (-w2 * cos - h2 * sin),
+			y: rect.y + (-w2 * sin + h2 * cos)
+		}
+	];
+}
+
+function projectCorners(c, a) {
+	let min = Infinity;
+	let max = -Infinity;
+
+	for (let i = 0; i < c.length; i++) {
+		const dot = c[i].x * a.x + c[i].y * a.y;
+		if (dot < min) min = dot;
+		if (dot > max) max = dot;
+	}
+
+	return { min, max };
+}
+
+// note to self: this is centered rectangle!!!! same for drawing rectangles!!
+function collision(rect1, rect2) {
+	rect1 = rectToCorners(rect1);
+	rect2 = rectToCorners(rect2);
+
+	const axes = [
+		{ x: rect1[1].x - rect1[0].x, y: rect1[1].y - rect1[0].y },
+		{ x: rect1[1].x - rect1[2].x, y: rect1[1].y - rect1[2].y },
+		{ x: rect2[1].x - rect2[0].x, y: rect2[1].y - rect2[0].y },
+		{ x: rect2[1].x - rect2[2].x, y: rect2[1].y - rect2[2].y }
+	];
+
+	for (let i = 0; i < axes.length; i++) {
+		const a = axes[i];
+		const length = Math.sqrt(a.x * a.x + a.y * a.y);
+		const normAxis = { x: a.x / length, y: a.y / length };
+
+		const proj1 = projectCorners(rect1, normAxis);
+		const proj2 = projectCorners(rect2, normAxis);
+
+		if ((proj1.max < proj2.min || proj2.max < proj1.min)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 
 const easing = {};
 {
@@ -115,13 +191,28 @@ let pepTalkInfo = {
 const camera = {
 	x: 0,
 	y: 0,
-	zoom: 0,
+	zoom: 1,
+}
+
+// note to self: this is centered rectangle!!!! same for rect collisions!!
+function rotrect(rect, useRect) {
+	const [width, height] = [main.width, main.height];
+	const zoomMult = height / 720 * camera.zoom;
+	ctx.translate((rect.x - camera.x) * zoomMult + width / 2, -(rect.y - camera.y) * zoomMult + height / 2);
+	ctx.rotate(rect.r);
+	ctx[useRect ? "rect" : "fillRect"](rect.w * zoomMult * -0.5, rect.h * zoomMult * -0.5, rect.w * zoomMult, rect.h * zoomMult);
 }
 
 function rect(x, y, w, h, useRect) {
 	const [width, height] = [main.width, main.height];
-	const zoomMult = height / 720;
+	const zoomMult = height / 720 * camera.zoom;
 	ctx[useRect ? "rect" : "fillRect"]((x - camera.x) * zoomMult + width / 2, -(y - camera.y) * zoomMult + height / 2, w * zoomMult, h * zoomMult);
+}
+function line(x1, y1, x2, y2) {
+	const [width, height] = [main.width, main.height];
+	const zoomMult = height / 720;
+	ctx.moveTo((x1 - camera.x) * zoomMult + width / 2, -(y1 - camera.y) * zoomMult + height / 2);
+	ctx.lineTo((x2 - camera.x) * zoomMult + width / 2, -(y2 - camera.y) * zoomMult + height / 2);
 }
 
 function letter(t, x, y, r) {
@@ -151,12 +242,24 @@ let keysDown = new Set();
 
 document.addEventListener('keydown', e => {
 	e.preventDefault();
-	if (!keysDown.has(e.key)) keysDown.add(e.key);
+	if (!keysDown.has(e.code)) keysDown.add(e.code);
 });
 document.addEventListener('keyup', e => {
 	e.preventDefault();
-	keysDown.delete(e.key);
+	keysDown.delete(e.code);
 });
+
+let musicToast = -100000;
+async function startMusic(t) {
+	if (bgm) bgm.stop();
+	bgm = audio.createBufferSource();
+	await waitUntil(() => !!buffer);
+	bgm.buffer = buffer;
+	bgm.loop = true;
+	bgm.connect(audio.destination);
+	bgm.start(t || 0);
+	musicToast = performance.now();
+}
 
 let lastFrame = performance.now();
 function draw() {
@@ -230,6 +333,7 @@ function draw() {
 			ctx.fillRect(0, 0, width, height);
 			if ((now - pepTalkInfo.closeTime) >= 2000) {
 				pepTalk = false;
+				startMusic(audio.currentTime + 2);
 				pepTalkInfo.line = 0;
 				pepTalkInfo.closed = false;
 			}
@@ -239,26 +343,36 @@ function draw() {
 		ctx.fillStyle = "#000";
 		ctx.fillRect(0, 0, width, height);
 		ctx.fillStyle = "#fff";
-		rect(plr.x - 12, plr.y - 12, 24, 36);
+		rect(plr.x - 12, plr.y - 18, 24, 36);
 
 		ctx.fillStyle = "#222";
-		rect(plr.x - 800, -48, 1600, 1600)
+		rect(plr.x - 1600, -54, 3200, 1600);
+		ctx.fillStyle = "#333";
+		rect(plr.x - 1600, -54, 3200, 2);
 		ctx.fillStyle = "#444";
 		for (let i = -50; i < 50; i++) {
-			rect((Math.floor(plr.x / 48) + i) * 48, -48, 2, 16)
+			rect((Math.floor(plr.x / 54) + i) * 54 - 1, -54, 2, 16);
 		}
 
 		// player movement
-		if (keysDown.has("a")) {
+		if (keysDown.has("Minus")) {
+			camera.zoom /= 1.02;
+			camera.zoom = Math.max(0.5, camera.zoom);
+		}
+		if (keysDown.has("Equal")) {
+			camera.zoom *= 1.02;
+			camera.zoom = Math.min(2, camera.zoom);
+		}
+		if (keysDown.has("KeyA")) {
 			plr.vx -= 2;
 		}
-		if (keysDown.has("d")) {
+		if (keysDown.has("KeyD")) {
 			plr.vx += 2;
 		}
-		if (keysDown.has("w") || keysDown.has(" ")) {
+		if (keysDown.has("KeyW") || keysDown.has("Space")) {
 			plr.vy += 1;
 		}
-		if (keysDown.has("s")) {
+		if (keysDown.has("KeyS")) {
 			plr.vy -= 0.8;
 		}
 		plr.vx *= 0.85;
@@ -270,8 +384,8 @@ function draw() {
 			plr.y = 0;
 			plr.vy = 0;
 		}
-		if (plr.y > 2400 + 12 && plr.vy > 0) {
-			plr.y = 2400 + 12;
+		if (plr.y > 2400 + 18 && plr.vy > 0) {
+			plr.y = 2400 + 18;
 			plr.vy = 0;
 		}
 		if (plr.x < -2400 + 12 && plr.vx < 0) {
@@ -291,13 +405,27 @@ function draw() {
 		ctx.globalAlpha = 0.25;
 		ctx.fillStyle = "#48b";
 		ctx.fillRect(0, 0, width, height);
-		ctx.globalAlpha = 0.5;
+		ctx.globalAlpha = 0.25 + Math.sin(performance.now() / 500) * 0.1;
 		ctx.translate(width / 2, height / 2);
 		ctx.rotate(Math.PI * 0.25);
 		for (let i = -50; i < 50; i++) {
 			ctx.fillRect(-width * 2, i * 100 * sizeMult + ((performance.now() / 2) % 100) * sizeMult, width * 4, 40 * sizeMult);
 		}
 		ctx.restore();
+		ctx.beginPath();
+		ctx.globalAlpha = 1;
+		rect(-2400, 2400, 4800, 9600, true);
+		ctx.strokeStyle = "#48b";
+		ctx.lineWidth = height / 200;
+		ctx.stroke();
+
+		// yo just trust me on this one but the hitbox being smaller feels much better
+		const plrCollision = { x: plr.x, y: plr.y - 36, w: 16, h: 30, r: 0 };
+
+		ctx.fillStyle = "#fff";
+		const testBox = { x: 80, y: 0, w: 150, h: 10, r: 0.8 }
+		rotrect(testBox);
+		console.log(collision(testBox, plrCollision));
 
 		camera.x = plr.x;
 		camera.y = plr.y;
