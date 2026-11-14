@@ -105,12 +105,24 @@ let dialogues = {
 
 let pepTalk = true;
 let pepTalkInfo = {
-	line: 0,
+	line: 7,
 	lineStart: performance.now() + 1000,
 	content: dialogues.a,
 	closeTime: 0,
 	closed: false
 };
+
+const camera = {
+	x: 0,
+	y: 0,
+	zoom: 0,
+}
+
+function rect(x, y, w, h, useRect) {
+	const [width, height] = [main.width, main.height];
+	const zoomMult = height / 720;
+	ctx[useRect ? "rect" : "fillRect"]((x - camera.x) * zoomMult + width / 2, -(y - camera.y) * zoomMult + height / 2, w * zoomMult, h * zoomMult);
+}
 
 function letter(t, x, y, r) {
 	const init = ctx.getTransform();
@@ -126,6 +138,8 @@ let clicked = false;
 const plr = {
 	x: 0,
 	y: 0,
+	vx: 0,
+	vy: 0,
 	hp: 100,
 }
 
@@ -159,7 +173,8 @@ function draw() {
 		ctx.fillStyle = "#fff";
 		ctx.textAlign = "center";
 		ctx.textBaseline = "middle";
-		ctx.font = "24px pixel";
+		const sizeMult = Math.floor(height / 30) / 24
+		ctx.font = `${Math.floor(height / 30)}px pixel`;
 		let at = (now - pepTalkInfo.lineStart) / 1000 * 40;
 		let currentLine = pepTalkInfo.content[pepTalkInfo.line];
 		if (currentLine && clicked && !pepTalkInfo.closed) {
@@ -189,8 +204,8 @@ function draw() {
 						}
 						letter(
 							char,
-							width / 2 + i2 * 12 + Math.sin(t) * 1.5 - line.length * 12 / 2 + 6,
-							height / 2 + Math.cos(t) * 1.5 + i * 32 + 20 - h * 20 - pepTalkInfo.content.length * 32 / 2,
+							width / 2 + i2 * 14 * sizeMult + Math.sin(t) * 1.5 * sizeMult - (line.length + 0.5) * 14 * sizeMult / 2,
+							height / 2 + Math.cos(t) * 1.5 * sizeMult + i * 32 * sizeMult + 20 - h * 20 - pepTalkInfo.content.length * 32 * sizeMult / 2,
 							0 + Math.sin(t + 0.8) * 0.1,
 						)
 					}
@@ -199,12 +214,12 @@ function draw() {
 		});
 		ctx.globalAlpha = 1;
 		if (!pepTalkInfo.closed && currentLine && (at - 15) > currentLine.length) {
-			const y = height / 2 + pepTalkInfo.line * 32 - pepTalkInfo.content.length * 32 / 2 + 50 + Math.abs(Math.sin(performance.now() / 100)) * -4;
+			const y = height / 2 + pepTalkInfo.line * 32 * sizeMult - pepTalkInfo.content.length * 32 * sizeMult / 2 + 50 * sizeMult + Math.abs(Math.sin(performance.now() / 100)) * -4 * sizeMult;
 			ctx.fillStyle = "#fff";
 			ctx.beginPath();
-			ctx.moveTo(width / 2 - 8, y);
-			ctx.lineTo(width / 2 + 8, y);
-			ctx.lineTo(width / 2, y + 8);
+			ctx.moveTo(width / 2 - 8 * sizeMult, y);
+			ctx.lineTo(width / 2 + 8 * sizeMult, y);
+			ctx.lineTo(width / 2, y + 8 * sizeMult);
 			ctx.closePath();
 			ctx.fill();
 		}
@@ -220,9 +235,80 @@ function draw() {
 			}
 		}
 	} else {
-		pepTalk = true;
-		pepTalkInfo.lineStart = now + 1000;
-		pepTalkInfo.content = dialogues.b;
+		const sizeMult = height / 2000;
+		ctx.fillStyle = "#000";
+		ctx.fillRect(0, 0, width, height);
+		ctx.fillStyle = "#fff";
+		rect(plr.x - 12, plr.y - 12, 24, 36);
+
+		ctx.fillStyle = "#222";
+		rect(plr.x - 800, -48, 1600, 1600)
+		ctx.fillStyle = "#444";
+		for (let i = -50; i < 50; i++) {
+			rect((Math.floor(plr.x / 48) + i) * 48, -48, 2, 16)
+		}
+
+		// player movement
+		if (keysDown.has("a")) {
+			plr.vx -= 2;
+		}
+		if (keysDown.has("d")) {
+			plr.vx += 2;
+		}
+		if (keysDown.has("w") || keysDown.has(" ")) {
+			plr.vy += 1;
+		}
+		if (keysDown.has("s")) {
+			plr.vy -= 0.8;
+		}
+		plr.vx *= 0.85;
+		plr.x += plr.vx;
+		plr.vy -= 0.4;
+		plr.vy *= 0.95;
+		plr.y += plr.vy;
+		if (plr.y < 0 && plr.vy < 0) {
+			plr.y = 0;
+			plr.vy = 0;
+		}
+		if (plr.y > 2400 + 12 && plr.vy > 0) {
+			plr.y = 2400 + 12;
+			plr.vy = 0;
+		}
+		if (plr.x < -2400 + 12 && plr.vx < 0) {
+			plr.x = -2400 + 12;
+			plr.vx = 0;
+		}
+		if (plr.x > 2400 - 12 && plr.vx > 0) {
+			plr.x = 2400 - 12;
+			plr.vx = 0;
+		}
+
+		ctx.save();
+		ctx.beginPath();
+		ctx.rect(0, 0, width, height)
+		rect(-2400, 2400, 4800, 9600, true);
+		ctx.clip('evenodd'); // why is it called this when it can be called invert
+		ctx.globalAlpha = 0.25;
+		ctx.fillStyle = "#48b";
+		ctx.fillRect(0, 0, width, height);
+		ctx.globalAlpha = 0.5;
+		ctx.translate(width / 2, height / 2);
+		ctx.rotate(Math.PI * 0.25);
+		for (let i = -50; i < 50; i++) {
+			ctx.fillRect(-width * 2, i * 100 * sizeMult + ((performance.now() / 2) % 100) * sizeMult, width * 4, 40 * sizeMult);
+		}
+		ctx.restore();
+
+		camera.x = plr.x;
+		camera.y = plr.y;
+
+		if (plr.hp <= 0) {
+			pepTalk = true;
+			pepTalkInfo.lineStart = now + 1000;
+			pepTalkInfo.content = dialogues.b;
+			ctx.fillStyle = "#fff";
+			ctx.fillRect(0, 0, width, height);
+		}
 	}
 
 	clicked = false;
