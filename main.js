@@ -6,9 +6,37 @@ const audio = new AudioContext();
 
 let buffer;
 (async () => {
-	buffer = await audio.decodeAudioData(await(await fetch('last.mp3')).arrayBuffer());
+	buffer = await audio.decodeAudioData(await (await fetch('last.mp3')).arrayBuffer());
 })();
 let bgm;
+
+let sfx = {};
+
+[
+	'death.flac',
+	'shatter.mp3'
+].forEach(async v => {
+	sfx[v] = await audio.decodeAudioData(await (await fetch(`sounds/${v}`)).arrayBuffer());
+})
+
+// JAVASCRIPT GIVE US A NATIVE LERP FUNCTION PLEASEEEEEE
+const lerp = (a, b, t) => a * (1 - t) + b * t;
+
+const rpc = () => {
+	const angle = Math.random() * 2 * Math.PI;
+	const r = Math.sqrt(Math.random());
+	const x = r * Math.cos(angle);
+	const y = r * Math.sin(angle);
+
+	return { x, y };
+}
+const rp = () => {
+	const angle = Math.random() * 2 * Math.PI;
+	const x = Math.cos(angle);
+	const y = Math.sin(angle);
+
+	return { x, y };
+}
 
 const waitUntil = async (predicateFn) => {
 	while (!predicateFn()) {
@@ -59,6 +87,10 @@ function projectCorners(c, a) {
 
 // note to self: this is centered rectangle!!!! same for drawing rectangles!!
 function collision(rect1, rect2) {
+	if (rect1.r == 0 && rect2.r == 0) {
+		return simpleCollision(rect1, rect2);
+	}
+
 	rect1 = rectToCorners(rect1);
 	rect2 = rectToCorners(rect2);
 
@@ -84,7 +116,23 @@ function collision(rect1, rect2) {
 
 	return true;
 }
-
+function simpleCollision(rect1, rect2) {
+	// this bad but i think objects take up more memory idk how to fix i come back later
+	const left1 = rect1.x - rect1.w * 0.5;
+	const right1 = rect1.x + rect1.w * 0.5;
+	const bottom1 = rect1.y - rect1.h * 0.5;
+	const top1 = rect1.y + rect1.h * 0.5;
+	const left2 = rect2.x - rect2.w * 0.5;
+	const right2 = rect2.x + rect2.w * 0.5;
+	const bottom2 = rect2.y - rect2.h * 0.5;
+	const top2 = rect2.y + rect2.h * 0.5;
+	return (
+		left1 < right2 &&
+		right1 > left2 &&
+		bottom1 < top2 &&
+		top1 > bottom2
+	);
+}
 
 const easing = {};
 {
@@ -203,10 +251,10 @@ function rotrect(rect, useRect) {
 	ctx[useRect ? "rect" : "fillRect"](rect.w * zoomMult * -0.5, rect.h * zoomMult * -0.5, rect.w * zoomMult, rect.h * zoomMult);
 }
 
-function rect(x, y, w, h, useRect) {
+function rect(x, y, w, h, useRect, center) {
 	const [width, height] = [main.width, main.height];
 	const zoomMult = height / 720 * camera.zoom;
-	ctx[useRect ? "rect" : "fillRect"]((x - camera.x) * zoomMult + width / 2, -(y - camera.y) * zoomMult + height / 2, w * zoomMult, h * zoomMult);
+	ctx[useRect ? "rect" : "fillRect"]((x - camera.x) * zoomMult - (center ? (w * zoomMult / 2) : 0) + width / 2, -(y - camera.y) * zoomMult + height / 2 - (center ? (h * zoomMult / 2) : 0), w * zoomMult, h * zoomMult);
 }
 function line(x1, y1, x2, y2) {
 	const [width, height] = [main.width, main.height];
@@ -234,6 +282,8 @@ const plr = {
 	hp: 100,
 }
 
+window.plr = plr;
+
 document.addEventListener('click', e => {
 	clicked = true;
 });
@@ -257,11 +307,213 @@ async function startMusic(t) {
 	bgm.buffer = buffer;
 	bgm.loop = true;
 	bgm.connect(audio.destination);
-	bgm.start(t || 0);
+	bgm.start(t ?? 0);
 	musicToast = performance.now();
+}
+const sounds = new Set();
+function sound(n, t, v) {
+	const s = audio.createBufferSource();
+	const g = audio.createGain();
+	g.gain.value = v ?? 1;
+	s.buffer = sfx[n];
+	s.connect(g);
+	g.connect(audio.destination);
+	s.start(t ?? 0);
+	s.onended = () => {
+		sounds.delete(s);
+		s.disconnect();
+		g.disconnect();
+	};
+	sounds.add(s);
+}
+function stopAllSounds() {
+	sounds.forEach(s => {
+		s.stop();
+	})
+}
+function stopMusic(t) {
+	if (bgm) bgm.stop();
+}
+
+const particles = [];
+
+class Particle {
+	constructor(data) {
+		this.data = data;
+		this.start = performance.now();
+	}
+
+	get expired() {
+		return performance.now() < this.start + this.data.l;
+	}
+
+	draw() {
+		const data = this.data;
+		const t = (performance.now() - this.start) / data.l;
+		const lp = ease(data.easepos ?? 0, t);
+		const ls = ease(data.easesize ?? 0, t);
+		const size = lerp(data.ss, data.es, ls);
+		ctx.beginPath();
+		rect(lerp(data.s.x, data.e?.x ?? data.s.x, lp), lerp(data.s.y, data.e?.y ?? data.s.y, lp), size, size, true, true);
+		if (data.clr) {
+			ctx.fillStyle = data.clr;
+			ctx.fill();
+		}
+		if (data.stroke) {
+			ctx.strokeStyle = data.stroke;
+			ctx.lineWidth = data.lw;
+			ctx.stroke();
+		}
+	}
+}
+
+const plrCollision = { x: plr.x, y: plr.y - 36, w: 16, h: 30, r: 0 };
+let f = 0; // btw physics runs at 120 fps
+let lastDraw = undefined;
+
+class Attack {
+	constructor(lifetime) {
+		this.start = f;
+		this.lifetime = lifetime;
+	}
+
+	get expired() {
+		return f < this.start + this.lifetime;
+	}
+}
+
+class AttackShatter extends Attack {
+	constructor(i, ult) {
+		const delay = ult ? 1 : 0.25;
+		const length = ult ? 180 : 120;
+		super(length + i * delay + 120);
+		this.delay = delay;
+		this.length = length;
+		this.i = i;
+		this.ult = ult;
+		this.x = Math.random() * 4800 - 2400;
+		this.y = Math.random() * 2400;
+		this.boom = false;
+		this.noise = false;
+	}
+
+	update() {
+		if (f >= (this.length + this.i * this.delay + this.start) && !this.boom) {
+			this.boom = true;
+			const s = this.ult ? 500 : 250;
+			const hit = collision(plrCollision, { x: this.x, y: this.y, w: s, h: s, r: 0 });
+			console.log(hit);
+			if (hit) {
+				plr.hp -= 100;
+			}
+			const dist = Math.hypot(this.x - plr.x, this.y - plr.y) * 15;
+			const vol = (1 / dist) * (this.ult ? 2400 : 400) * 5;
+			console.log(vol);
+			sound("shatter.mp3", audio.currentTime, Math.min(vol, 3));
+		}
+	}
+
+	draw() {
+		if (lastDraw !== "shatter") {
+			ctx.strokeStyle = "#fff";
+			ctx.lineWidth = 1.5;
+			lastDraw = "shatter";
+		}
+		const t = (f - this.start - this.i * this.delay) / this.length;
+		const t2 = (f - this.start - this.i * this.delay - this.length) / 60;
+		const s = this.ult ? 500 : 250;
+		if (t > 0 && t < 1) {
+			const rs1 = ease(14, t) * s;
+			const rs2 = ease(5, t) * s;
+			ctx.beginPath();
+			rect(this.x, this.y, rs1, rs1, true, true);
+			ctx.stroke();
+			ctx.fillStyle = "#fff4";
+			ctx.fill();
+			ctx.fillStyle = "#fff";
+			rect(this.x, this.y, rs2, rs2, false, true);
+		} else if (t > 1) {
+			ctx.fillStyle = "#f55";
+			const rs1 = s - ease(14, t2) * s;
+			rect(this.x, this.y, rs1, rs1, false, true);
+		}
+	}
+}
+
+let atk = 0;
+
+let attacks = [];
+
+function physics() {
+	f++;
+
+	// player movement
+	if (keysDown.has("Minus")) {
+		camera.zoom /= 1.02;
+		camera.zoom = Math.max(0.5, camera.zoom);
+	}
+	if (keysDown.has("Equal")) {
+		camera.zoom *= 1.02;
+		camera.zoom = Math.min(2, camera.zoom);
+	}
+	if (keysDown.has("KeyA")) {
+		plr.vx -= 1;
+	}
+	if (keysDown.has("KeyD")) {
+		plr.vx += 1;
+	}
+	if (keysDown.has("KeyW") || keysDown.has("Space")) {
+		plr.vy += 0.5;
+	}
+	if (keysDown.has("KeyS")) {
+		plr.vy -= 0.4;
+	}
+	plr.vx *= 0.85;
+	plr.x += plr.vx;
+	plr.vy -= 0.2;
+	plr.vy *= 0.95;
+	plr.y += plr.vy;
+	if (plr.y < 0 && plr.vy < 0) {
+		plr.y = 0;
+		plr.vy = 0;
+	}
+	if (plr.y > 2400 + 18 && plr.vy > 0) {
+		plr.y = 2400 + 18;
+		plr.vy = 0;
+	}
+	if (plr.x < -2400 + 12 && plr.vx < 0) {
+		plr.x = -2400 + 12;
+		plr.vx = 0;
+	}
+	if (plr.x > 2400 - 12 && plr.vx > 0) {
+		plr.x = 2400 - 12;
+		plr.vx = 0;
+	}
+
+	camera.x = plr.x;
+	camera.y = plr.y;
+
+	plrCollision.x = plr.x;
+	plrCollision.y = plr.y - 36;
+
+	atk++;
+	if (atk > 0) {
+		atk = atk % 600;
+	}
+
+	if (atk == 0 || atk == 120 || atk == 240 || atk == 360) {
+		for (let i = 0; i < ((atk == 360) ? 50 : 150); i++) {
+			attacks.push(new AttackShatter(i, atk == 360));
+		}
+	}
+
+	attacks.forEach(a => {
+		a.update();
+	})
 }
 
 let lastFrame = performance.now();
+let lastUpdate = 0;
 function draw() {
 	const now = performance.now();
 	const delta = now - lastFrame;
@@ -336,99 +588,19 @@ function draw() {
 				startMusic(audio.currentTime + 2);
 				pepTalkInfo.line = 0;
 				pepTalkInfo.closed = false;
+				lastUpdate = performance.now();
+				atk = -600;
+				plr.hp = 100;
+				plr.x = plr.y = plr.vx = plr.vy = 0;
+				attacks.length = 0;
 			}
 		}
 	} else {
-		const sizeMult = height / 2000;
-		ctx.fillStyle = "#000";
-		ctx.fillRect(0, 0, width, height);
-		ctx.fillStyle = "#fff";
-		rect(plr.x - 12, plr.y - 18, 24, 36);
-
-		ctx.fillStyle = "#222";
-		rect(plr.x - 1600, -54, 3200, 1600);
-		ctx.fillStyle = "#333";
-		rect(plr.x - 1600, -54, 3200, 2);
-		ctx.fillStyle = "#444";
-		for (let i = -50; i < 50; i++) {
-			rect((Math.floor(plr.x / 54) + i) * 54 - 1, -54, 2, 16);
+		while (true) {
+			if (lastUpdate > performance.now()) break;
+			lastUpdate += 1000 / 120;
+			physics();
 		}
-
-		// player movement
-		if (keysDown.has("Minus")) {
-			camera.zoom /= 1.02;
-			camera.zoom = Math.max(0.5, camera.zoom);
-		}
-		if (keysDown.has("Equal")) {
-			camera.zoom *= 1.02;
-			camera.zoom = Math.min(2, camera.zoom);
-		}
-		if (keysDown.has("KeyA")) {
-			plr.vx -= 2;
-		}
-		if (keysDown.has("KeyD")) {
-			plr.vx += 2;
-		}
-		if (keysDown.has("KeyW") || keysDown.has("Space")) {
-			plr.vy += 1;
-		}
-		if (keysDown.has("KeyS")) {
-			plr.vy -= 0.8;
-		}
-		plr.vx *= 0.85;
-		plr.x += plr.vx;
-		plr.vy -= 0.4;
-		plr.vy *= 0.95;
-		plr.y += plr.vy;
-		if (plr.y < 0 && plr.vy < 0) {
-			plr.y = 0;
-			plr.vy = 0;
-		}
-		if (plr.y > 2400 + 18 && plr.vy > 0) {
-			plr.y = 2400 + 18;
-			plr.vy = 0;
-		}
-		if (plr.x < -2400 + 12 && plr.vx < 0) {
-			plr.x = -2400 + 12;
-			plr.vx = 0;
-		}
-		if (plr.x > 2400 - 12 && plr.vx > 0) {
-			plr.x = 2400 - 12;
-			plr.vx = 0;
-		}
-
-		ctx.save();
-		ctx.beginPath();
-		ctx.rect(0, 0, width, height)
-		rect(-2400, 2400, 4800, 9600, true);
-		ctx.clip('evenodd'); // why is it called this when it can be called invert
-		ctx.globalAlpha = 0.25;
-		ctx.fillStyle = "#48b";
-		ctx.fillRect(0, 0, width, height);
-		ctx.globalAlpha = 0.25 + Math.sin(performance.now() / 500) * 0.1;
-		ctx.translate(width / 2, height / 2);
-		ctx.rotate(Math.PI * 0.25);
-		for (let i = -50; i < 50; i++) {
-			ctx.fillRect(-width * 2, i * 100 * sizeMult + ((performance.now() / 2) % 100) * sizeMult, width * 4, 40 * sizeMult);
-		}
-		ctx.restore();
-		ctx.beginPath();
-		ctx.globalAlpha = 1;
-		rect(-2400, 2400, 4800, 9600, true);
-		ctx.strokeStyle = "#48b";
-		ctx.lineWidth = height / 200;
-		ctx.stroke();
-
-		// yo just trust me on this one but the hitbox being smaller feels much better
-		const plrCollision = { x: plr.x, y: plr.y - 36, w: 16, h: 30, r: 0 };
-
-		ctx.fillStyle = "#fff";
-		const testBox = { x: 80, y: 0, w: 150, h: 10, r: 0.8 }
-		rotrect(testBox);
-		console.log(collision(testBox, plrCollision));
-
-		camera.x = plr.x;
-		camera.y = plr.y;
 
 		if (plr.hp <= 0) {
 			pepTalk = true;
@@ -436,6 +608,52 @@ function draw() {
 			pepTalkInfo.content = dialogues.b;
 			ctx.fillStyle = "#fff";
 			ctx.fillRect(0, 0, width, height);
+
+			stopMusic();
+			stopAllSounds();
+			sound('death.flac', null, 3);
+		} else {
+			const sizeMult = height / 2000;
+			ctx.fillStyle = "#000";
+			ctx.fillRect(0, 0, width, height);
+			ctx.fillStyle = "#fff";
+			rect(plr.x - 12, plr.y - 18, 24, 36);
+
+			ctx.fillStyle = "#222";
+			rect(plr.x - 1600, -54, 3200, 1600);
+			ctx.fillStyle = "#333";
+			rect(plr.x - 1600, -54, 3200, 2);
+			ctx.fillStyle = "#444";
+			for (let i = -50; i < 50; i++) {
+				rect((Math.floor(plr.x / 54) + i) * 54 - 1, -54, 2, 16);
+			}
+
+			lastDraw = null;
+			attacks.forEach(a => {
+				a.draw();
+			});
+
+			ctx.save();
+			ctx.beginPath();
+			ctx.rect(0, 0, width, height)
+			rect(-2400, 2400, 4800, 9600, true);
+			ctx.clip('evenodd'); // why is it called this when it can be called invert
+			ctx.globalAlpha = 0.25;
+			ctx.fillStyle = "#48b";
+			ctx.fillRect(0, 0, width, height);
+			ctx.globalAlpha = 0.25 + Math.sin(performance.now() / 500) * 0.1;
+			ctx.translate(width / 2, height / 2);
+			ctx.rotate(Math.PI * 0.25);
+			for (let i = -50; i < 50; i++) {
+				ctx.fillRect(-width * 2, i * 100 * sizeMult + ((performance.now() / 2) % 100) * sizeMult, width * 4, 40 * sizeMult);
+			}
+			ctx.restore();
+			ctx.beginPath();
+			ctx.globalAlpha = 1;
+			rect(-2400, 2400, 4800, 9600, true);
+			ctx.strokeStyle = "#48b";
+			ctx.lineWidth = height / 200;
+			ctx.stroke();
 		}
 	}
 
