@@ -14,7 +14,8 @@ let sfx = {};
 
 [
 	'death.flac',
-	'shatter.mp3'
+	'shatter.mp3',
+	'glass.mp3'
 ].forEach(async v => {
 	sfx[v] = await audio.decodeAudioData(await (await fetch(`sounds/${v}`)).arrayBuffer());
 })
@@ -288,6 +289,7 @@ const plr = {
 	vx: 0,
 	vy: 0,
 	hp: 100,
+	iframes: 0,
 }
 
 window.plr = plr;
@@ -343,7 +345,7 @@ function stopMusic(t) {
 	if (bgm) bgm.stop();
 }
 
-const particles = [];
+const particles = new Set();
 
 class Particle {
 	constructor(data) {
@@ -390,6 +392,14 @@ class Attack {
 	}
 }
 
+function dmg(amt) {
+	if (plr.iframes <= 0) {
+		plr.hp -= amt;
+		plr.iframes = 120;
+		sound('glass.mp3', null, 6)
+	}
+}
+
 class AttackCutter extends Attack {
 	constructor() {
 		super(300);
@@ -420,13 +430,16 @@ class AttackCutter extends Attack {
 				if (collision(plrCollision, this.hitboxes[i])) hit = true;
 			}
 			if (hit) {
-				plr.hp -= 40;
+				dmg(40);
 			}
 			sound("shatter.mp3", audio.currentTime, 2);
 		}
 	}
 
 	draw() {
+		if (lastDraw !== "cutter") {
+			lastDraw = "cutter";
+		}
 		const {x, y} = getWorldPosition(this.x, this.y);
 		const t = (f - this.start) / 240;
 		if (t > 1) {
@@ -468,11 +481,10 @@ class AttackShatter extends Attack {
 			const s = this.ult ? 500 : 250;
 			const hit = collision(plrCollision, { x: this.x, y: this.y, w: s, h: s, r: 0 });
 			if (hit) {
-				plr.hp -= 30;
+				dmg(30);
 			}
 			const dist = Math.hypot(this.x - plr.x, this.y - plr.y) * 15;
 			const vol = (1 / dist) * (this.ult ? 2400 : 400) * 5;
-			console.log(vol);
 			sound("shatter.mp3", audio.currentTime, Math.min(vol, 3));
 		}
 	}
@@ -516,6 +528,10 @@ function physics() {
 
 	plr.hp += 1 / 120;
 	plr.hp = Math.min(plr.hp, 100);
+
+	if (plr.iframes > 0) {
+		plr.iframes--;
+	}
 
 	// player movement
 	if (keysDown.has("Minus")) {
@@ -699,7 +715,9 @@ function draw() {
 			ctx.fillStyle = "#000";
 			ctx.fillRect(0, 0, width, height);
 			ctx.fillStyle = "#fff";
+			ctx.globalAlpha = (plr.iframes <= 0) ? 1 : (Math.sin(now / 75) * 0.25 + 0.5);
 			rect(plr.x - 12, plr.y - 18, 24, 36);
+			ctx.globalAlpha = 1;
 
 			ctx.fillStyle = "#222";
 			rect(plr.x - 1600, -54, 3200, 1600);
@@ -737,17 +755,20 @@ function draw() {
 			ctx.lineWidth = height / 200;
 			ctx.stroke();
 
-			ctx.strokeStyle = "#800";
-			ctx.lineWidth = 10;
-			const {x, y} = getWorldPosition({x: plr.x, y: plr.y - 36});
-			const r = Math.PI * 0.5;
-			ctx.beginPath();
-			ctx.arc(x, y, zoomMult * 80, -r, 2 * Math.PI - r);
-			ctx.stroke();
-			ctx.strokeStyle = "#f55";
-			ctx.beginPath();
-			ctx.arc(x, y, zoomMult * 80, -r, -r + plr.hp / 100 * 2 * Math.PI);
-			ctx.stroke();
+			particles.forEach(v => {
+				if (v.expired) particles.delete(v);
+				else v.draw();
+			});
+
+			if (plr.hp <= 99) {
+				const { x, y } = getWorldPosition({ x: plr.x, y: plr.y - 36 });
+				const r = Math.PI * 0.5;
+				ctx.lineWidth = 10;
+				ctx.strokeStyle = "#f55";
+				ctx.beginPath();
+				ctx.arc(x, y, height / 15, -r, -r + plr.hp / 100 * 2 * Math.PI);
+				ctx.stroke();
+			}
 		}
 	}
 
