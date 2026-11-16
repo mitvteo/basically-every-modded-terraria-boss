@@ -246,7 +246,7 @@ const camera = {
 function getWorldPosition(pos) {
 	const [width, height] = [main.width, main.height];
 	const zoomMult = height / 720 * camera.zoom;
-	return {x: (pos.x - camera.x) * zoomMult + width / 2, y: -(pos.y - camera.y) * zoomMult + height / 2};
+	return { x: (pos.x - camera.x) * zoomMult + width / 2, y: -(pos.y - camera.y) * zoomMult + height / 2 };
 }
 
 // note to self: this is centered rectangle!!!! same for rect collisions!!
@@ -291,8 +291,15 @@ const plr = {
 	hp: 100,
 	iframes: 0,
 }
-
-window.plr = plr;
+const boss = {
+	x: 0,
+	y: 0,
+	vx: 0,
+	vy: 0,
+	hp: 15000,
+	focus: 1,
+	rotation: 0,
+}
 
 document.addEventListener('click', e => {
 	clicked = true;
@@ -354,7 +361,7 @@ class Particle {
 	}
 
 	get expired() {
-		return performance.now() < this.start + this.data.l;
+		return performance.now() > this.start + this.data.l;
 	}
 
 	draw() {
@@ -377,7 +384,7 @@ class Particle {
 	}
 }
 
-const plrCollision = { x: plr.x, y: plr.y - 36, w: 16, h: 30, r: 0 };
+const plrCollision = { x: plr.x, y: plr.y, w: 16, h: 24, r: 0 };
 let f = 0; // btw physics runs at 120 fps
 let lastDraw = undefined;
 
@@ -396,23 +403,111 @@ function dmg(amt) {
 	if (plr.iframes <= 0) {
 		plr.hp -= amt;
 		plr.iframes = 120;
-		sound('glass.mp3', null, 6)
+		sound('glass.mp3', null, 6);
+		ss += 350;
+
+		for (let _ = 0; _ < 15; _++) {
+			const { x, y } = rp();
+			particles.add(new Particle({
+				s: { x: plr.x, y: plr.y },
+				e: { x: plr.x + x * 96, y: plr.y + y * 96 },
+				ss: 24 * Math.random(), es: 0,
+				easepos: 10, easesize: 10,
+				l: Math.random() * 1000 + 1000,
+				clr: "#fff"
+			}));
+		}
+	}
+}
+
+function angle(current, target) {
+	let d = (target - current) % 360;
+	if (d < -180) d += 360;
+	if (d > 180) d -= 360;
+	return d;
+}
+
+// TODO
+class AttackMissile extends Attack {
+	constructor() {
+		super(660);
+		this.x = boss.x;
+		this.y = boss.y;
+		this.rot = (Math.random() - 0.5) * 2 * Math.PI;
+		this.points = [];
+		this.boom = false;
+	}
+
+	update() {
+
+		if (t >= 1 && !this.boom) {
+			this.boom = true;
+			let hit = false
+			for (let i = 0; i < this.amt; i++) {
+				if (collision(plrCollision, this.hitboxes[i])) hit = true;
+			}
+			if (hit) {
+				dmg(40);
+			}
+			ss += 150;
+			sound("shatter.mp3", audio.currentTime, 2);
+		}
+	}
+
+	draw() {
+		if (lastDraw !== "missile") {
+			lastDraw = "missile";
+		}
+		ctx.fillStyle = "#fff";
+		ctx.strokeStyle = "#fff";
+		rect(this.x, this.y, 24, 24, false, true);
+	}
+}
+
+let bulletValleyRot = 0;
+class AttackBulletValley extends Attack {
+	constructor() {
+		super(2000);
+		this.x = boss.x;
+		this.y = boss.y;
+		bulletValleyRot += 0.3 + Math.PI;
+		this.rot = (Math.random() > 0.9) ? (Math.random() * Math.PI * 2) : bulletValleyRot;
+		this.hitbox = { w: 8, h: 8, r: 0 };
+	}
+
+	update() {
+		this.x += Math.cos(this.rot) * 4.5;
+		this.y += Math.sin(this.rot) * 4.5;
+		this.hitbox.x = this.x;
+		this.hitbox.y = this.y;
+		const hit = collision(plrCollision, this.hitbox);
+		if (hit) {
+			dmg(15);
+		}
+	}
+
+	draw() {
+		if (lastDraw !== "bulletvalley") {
+			lastDraw = "bulletvalley";
+			ctx.fillStyle = "#fff";
+		}
+		rect(this.x, this.y, 12, 12, false, true)
 	}
 }
 
 class AttackCutter extends Attack {
-	constructor() {
+	constructor(less) {
 		super(300);
 		this.sr = Math.random() * Math.PI * 2;
 		this.er = this.sr + Math.random() * Math.PI * 0 + 20 * (Math.random() > 0.5 ? -1 : 1);
-		this.amt = Math.floor(Math.random() * 4 + 1);
+		this.amt = less ? 1 : Math.floor(Math.random() * 4 + 1);
 		this.boom = false;
-		const {x, y} = rp();
+		const { x, y } = rp();
 		this.x = plr.x + x * 160;
 		this.y = plr.y + y * 160;
 		this.hitboxes = [];
 		for (let i = 0; i < this.amt; i++) {
-			this.hitboxes[i] = {x: this.x, y: this.y, w: 5000, h: 96, r: 0};
+			this.hitboxes[i] = { x: this.x, y: this.y, w: 5000, h: 96, r: 0 };
 		}
 	}
 
@@ -432,6 +527,7 @@ class AttackCutter extends Attack {
 			if (hit) {
 				dmg(40);
 			}
+			ss += 150;
 			sound("shatter.mp3", audio.currentTime, 2);
 		}
 	}
@@ -440,7 +536,7 @@ class AttackCutter extends Attack {
 		if (lastDraw !== "cutter") {
 			lastDraw = "cutter";
 		}
-		const {x, y} = getWorldPosition(this.x, this.y);
+		const { x, y } = getWorldPosition(this.x, this.y);
 		const t = (f - this.start) / 240;
 		if (t > 1) {
 			ctx.fillStyle = "#f55";
@@ -485,7 +581,20 @@ class AttackShatter extends Attack {
 			}
 			const dist = Math.hypot(this.x - plr.x, this.y - plr.y) * 15;
 			const vol = (1 / dist) * (this.ult ? 2400 : 400) * 5;
+			ss += this.ult ? 5 : 1.5;
 			sound("shatter.mp3", audio.currentTime, Math.min(vol, 3));
+
+			for (let _ = 0; _ < 5; _++) {
+				const { x, y } = rp();
+				particles.add(new Particle({
+					s: { x: this.x, y: this.y },
+					e: { x: this.x + x * 200, y: this.y + y * 200 },
+					ss: s * Math.random(), es: 0,
+					easepos: 10, easesize: 10,
+					l: Math.random() * 500 + 500,
+					clr: "#f558"
+				}));
+			}
 		}
 	}
 
@@ -516,7 +625,10 @@ class AttackShatter extends Attack {
 	}
 }
 
+window.particles = particles;
+
 let atk = 0;
+let ss = 0;
 
 let attacks = new Set();
 window.attacks = attacks;
@@ -528,6 +640,8 @@ function physics() {
 
 	plr.hp += 1 / 120;
 	plr.hp = Math.min(plr.hp, 100);
+
+	ss *= 0.91;
 
 	if (plr.iframes > 0) {
 		plr.iframes--;
@@ -563,8 +677,8 @@ function physics() {
 		plr.y = 0;
 		plr.vy = 0;
 	}
-	if (plr.y > 2400 + 18 && plr.vy > 0) {
-		plr.y = 2400 + 18;
+	if (plr.y > 2400 - 18 && plr.vy > 0) {
+		plr.y = 2400 - 18;
 		plr.vy = 0;
 	}
 	if (plr.x < -2400 + 12 && plr.vx < 0) {
@@ -576,15 +690,23 @@ function physics() {
 		plr.vx = 0;
 	}
 
-	camera.x = plr.x;
-	camera.y = plr.y - 36;
+	if (f % 12 === 0 && plr.vy !== 0) {
+		const { x, y } = rp();
+		let ox = (Math.random() - 0.5) * 24;
+		particles.add(new Particle({
+			s: { x: plr.x + ox, y: plr.y - 18 },
+			e: { x: plr.x + ox + x * 24, y: plr.y - 54 - Math.abs(y) * 96 },
+			ss: 10 * Math.random(), es: 0,
+			easepos: 10, easesize: 10,
+			l: Math.random() * 1000 + 1000,
+			clr: "#fff"
+		}));
+	}
 
-	plrCollision.x = plr.x;
-	plrCollision.y = plr.y - 36;
-
+	let focus = 1;
 	atk++;
 	if (atk > 0) {
-		atk = atk % 1500;
+		atk = atk % 2100;
 	}
 
 	if (atk == 0 || atk == 120 || atk == 240 || atk == 360) {
@@ -599,11 +721,41 @@ function physics() {
 			break;
 		}
 	}
+	let dist = 0;
+	if (atk > 1400 && atk < 1950) {
+		if (atk % 3 !== 0) attacks.add(new AttackBulletValley());
+		focus = 0.001;
+		dist += 200;
+	}
+	boss.focus = lerp(boss.focus, focus, 0.01);
+
+	boss.rotation += (Math.random() - 0.5) * 0.05;
+
+	const targetx = plr.x + Math.cos(boss.rotation) * (320 + dist) + (Math.random() - 0.5) * 48;
+	const targety = plr.y + Math.sin(boss.rotation) * (320 + dist) + (Math.random() - 0.5) * 48;
+	boss.vx = lerp(boss.vx, (targetx - boss.x) * 0.1, 0.02 * focus);
+	boss.vy = lerp(boss.vy, (targety - boss.y) * 0.1, 0.02 * focus);
+	boss.x += boss.vx * focus;
+	boss.y += boss.vy * focus;
+
+	camera.x = plr.x + (Math.random() - 0.5) * ss;
+	camera.y = plr.y + (Math.random() - 0.5) * ss;
+
+	plrCollision.x = plr.x;
+	plrCollision.y = plr.y;
+
 	attacks.forEach(a => {
 		a.update();
 		if (a.expired) attacks.delete(a);
 	})
 }
+
+const keyOverlay = [
+	{ k: ['KeyW', 'Space'], p: [1, 1] },
+	{ k: ['KeyA'], p: [0, 0] },
+	{ k: ['KeyS'], p: [1, 0] },
+	{ k: ['KeyD'], p: [2, 0] },
+];
 
 let lastFrame = performance.now();
 let lastUpdate = 0;
@@ -716,22 +868,25 @@ function draw() {
 			ctx.fillRect(0, 0, width, height);
 			ctx.fillStyle = "#fff";
 			ctx.globalAlpha = (plr.iframes <= 0) ? 1 : (Math.sin(now / 75) * 0.25 + 0.5);
-			rect(plr.x - 12, plr.y - 18, 24, 36);
+			rect(plr.x - 12, plr.y + 18, 24, 36);
 			ctx.globalAlpha = 1;
 
 			ctx.fillStyle = "#222";
-			rect(plr.x - 1600, -54, 3200, 1600);
+			rect(plr.x - 1600, -18, 3200, 1600);
 			ctx.fillStyle = "#333";
-			rect(plr.x - 1600, -54, 3200, 2);
+			rect(plr.x - 1600, -18, 3200, 2);
 			ctx.fillStyle = "#444";
 			for (let i = -50; i < 50; i++) {
-				rect((Math.floor(plr.x / 54) + i) * 54 - 1, -54, 2, 16);
+				rect((Math.floor(plr.x / 54) + i) * 54 - 1, -18, 2, 16);
 			}
 
 			lastDraw = null;
 			attacks.forEach(a => {
 				a.draw();
 			});
+
+			ctx.fillStyle = "#f00";
+			rect(boss.x - 12, boss.y + 18, 24, 36)
 
 			ctx.save();
 			ctx.beginPath();
@@ -761,13 +916,31 @@ function draw() {
 			});
 
 			if (plr.hp <= 99) {
-				const { x, y } = getWorldPosition({ x: plr.x, y: plr.y - 36 });
+				const { x, y } = getWorldPosition({ x: plr.x, y: plr.y });
 				const r = Math.PI * 0.5;
-				ctx.lineWidth = 10;
+				ctx.lineWidth = 20 * sizeMult;
 				ctx.strokeStyle = "#f55";
 				ctx.beginPath();
-				ctx.arc(x, y, height / 15, -r, -r + plr.hp / 100 * 2 * Math.PI);
+				ctx.arc(x, y, 150 * sizeMult, -r, -r + plr.hp / 100 * 2 * Math.PI);
 				ctx.stroke();
+			}
+
+			{
+				const unit = 150 * sizeMult;
+				ctx.strokeStyle = "#fff8";
+				ctx.fillStyle = "#fff8";
+				ctx.lineWidth = 5 * sizeMult;
+				keyOverlay.forEach(b => {
+					const [x, y] = b.p;
+					ctx.beginPath();
+					ctx.rect(unit * 0.05 + x * unit, height - unit * 0.95 - y * unit, unit * 0.9, unit * 0.9);
+					ctx.stroke();
+					let pressed = false;
+					b.k.forEach(k => {
+						if (keysDown.has(k)) pressed = true;
+					});
+					if (pressed) ctx.fill();
+				})
 			}
 		}
 	}
@@ -778,7 +951,11 @@ function draw() {
 	ctx.textBaseline = "middle";
 	const sizeMult = Math.floor(height / 40) / 24
 	ctx.font = `${Math.floor(height / 40)}px pixel`;
-	letter(stopwatch.toFixed(2), width / 2, sizeMult * 15, 0)
+	letter(stopwatch.toFixed(2), width / 2, sizeMult * 15, 0);
+	ctx.textAlign = "left";
+	if (keysDown.has("ControlLeft")) {
+		letter(boss.focus.toFixed(2), sizeMult * 15, sizeMult * 15, 0);
+	}
 
 	clicked = false;
 
