@@ -242,13 +242,21 @@ const camera = {
 	zoom: 1,
 }
 
-// note to self: this is centered rectangle!!!! same for rect collisions!!
-function rotrect(rect, useRect) {
+function getWorldPosition(pos) {
 	const [width, height] = [main.width, main.height];
 	const zoomMult = height / 720 * camera.zoom;
+	return {x: (pos.x - camera.x) * zoomMult + width / 2, y: -(pos.y - camera.y) * zoomMult + height / 2};
+}
+
+// note to self: this is centered rectangle!!!! same for rect collisions!!
+function rotrect(rect, override, useRect) {
+	const [width, height] = [main.width, main.height];
+	const zoomMult = height / 720 * camera.zoom;
+	const transform = ctx.getTransform();
 	ctx.translate((rect.x - camera.x) * zoomMult + width / 2, -(rect.y - camera.y) * zoomMult + height / 2);
 	ctx.rotate(rect.r);
-	ctx[useRect ? "rect" : "fillRect"](rect.w * zoomMult * -0.5, rect.h * zoomMult * -0.5, rect.w * zoomMult, rect.h * zoomMult);
+	ctx[useRect ? "rect" : "fillRect"]((override.w ?? rect.w) * zoomMult * -0.5, (override.h ?? rect.h) * zoomMult * -0.5, (override.w ?? rect.w) * zoomMult, (override.h ?? rect.h) * zoomMult);
+	ctx.setTransform(ctx);
 }
 
 function rect(x, y, w, h, useRect, center) {
@@ -378,7 +386,65 @@ class Attack {
 	}
 
 	get expired() {
-		return f < this.start + this.lifetime;
+		return f > this.start + this.lifetime;
+	}
+}
+
+class AttackCutter extends Attack {
+	constructor() {
+		super(300);
+		this.sr = Math.random() * Math.PI * 2;
+		this.er = this.sr + Math.random() * Math.PI * 0 + 20 * (Math.random() > 0.5 ? -1 : 1);
+		this.amt = Math.floor(Math.random() * 4 + 1);
+		this.boom = false;
+		const {x, y} = rp();
+		this.x = plr.x + x * 160;
+		this.y = plr.y + y * 160;
+		this.hitboxes = [];
+		for (let i = 0; i < this.amt; i++) {
+			this.hitboxes[i] = {x: this.x, y: this.y, w: 5000, h: 96, r: 0};
+		}
+	}
+
+	update() {
+		const t = (f - this.start) / 240;
+		if (t < 1) {
+			for (let i = 0; i < this.amt; i++) {
+				this.hitboxes[i].r = (Math.PI / this.amt) * i + 8 / (t * 260 + 1) * this.er + this.sr;
+			}
+		}
+		if (t >= 1 && !this.boom) {
+			this.boom = true;
+			let hit = false
+			for (let i = 0; i < this.amt; i++) {
+				if (collision(plrCollision, this.hitboxes[i])) hit = true;
+			}
+			if (hit) {
+				plr.hp -= 40;
+			}
+			sound("shatter.mp3", audio.currentTime, 2);
+		}
+	}
+
+	draw() {
+		const {x, y} = getWorldPosition(this.x, this.y);
+		const t = (f - this.start) / 240;
+		if (t > 1) {
+			ctx.fillStyle = "#f55";
+			const s1 = 1 - ease(14, (t - 1) * 3);
+			const o = { h: s1 * 120, w: 5000 };
+			for (let i = 0; i < this.amt; i++) {
+				rotrect(this.hitboxes[i], o);
+			}
+		} else {
+			ctx.fillStyle = "#fff";
+			const s1 = ease(13, t);
+			const s2 = ease(14, t);
+			const o = { h: s1 * 96, w: s2 * 5000 };
+			for (let i = 0; i < this.amt; i++) {
+				rotrect(this.hitboxes[i], o);
+			}
+		}
 	}
 }
 
@@ -394,7 +460,6 @@ class AttackShatter extends Attack {
 		this.x = Math.random() * 4800 - 2400;
 		this.y = Math.random() * 2400;
 		this.boom = false;
-		this.noise = false;
 	}
 
 	update() {
@@ -402,9 +467,8 @@ class AttackShatter extends Attack {
 			this.boom = true;
 			const s = this.ult ? 500 : 250;
 			const hit = collision(plrCollision, { x: this.x, y: this.y, w: s, h: s, r: 0 });
-			console.log(hit);
 			if (hit) {
-				plr.hp -= 100;
+				plr.hp -= 30;
 			}
 			const dist = Math.hypot(this.x - plr.x, this.y - plr.y) * 15;
 			const vol = (1 / dist) * (this.ult ? 2400 : 400) * 5;
@@ -442,10 +506,16 @@ class AttackShatter extends Attack {
 
 let atk = 0;
 
-let attacks = [];
+let attacks = new Set();
+window.attacks = attacks;
+
+let stopwatch = 0;
 
 function physics() {
 	f++;
+
+	plr.hp += 1 / 120;
+	plr.hp = Math.min(plr.hp, 100);
 
 	// player movement
 	if (keysDown.has("Minus")) {
@@ -491,24 +561,31 @@ function physics() {
 	}
 
 	camera.x = plr.x;
-	camera.y = plr.y;
+	camera.y = plr.y - 36;
 
 	plrCollision.x = plr.x;
 	plrCollision.y = plr.y - 36;
 
 	atk++;
 	if (atk > 0) {
-		atk = atk % 600;
+		atk = atk % 1500;
 	}
 
 	if (atk == 0 || atk == 120 || atk == 240 || atk == 360) {
-		for (let i = 0; i < ((atk == 360) ? 50 : 150); i++) {
-			attacks.push(new AttackShatter(i, atk == 360));
+		for (let i = 0; i < ((atk == 360) ? 50 : 125); i++) {
+			attacks.add(new AttackShatter(i, atk == 360));
 		}
 	}
-
+	for (let n = 600; n < 1200; n += 150) {
+		if (atk == n) {
+			attacks.add(new AttackCutter());
+			attacks.add(new AttackCutter());
+			break;
+		}
+	}
 	attacks.forEach(a => {
 		a.update();
+		if (a.expired) attacks.delete(a);
 	})
 }
 
@@ -592,13 +669,15 @@ function draw() {
 				atk = -600;
 				plr.hp = 100;
 				plr.x = plr.y = plr.vx = plr.vy = 0;
-				attacks.length = 0;
+				attacks.clear();
+				stopwatch = 0;
 			}
 		}
 	} else {
 		while (true) {
 			if (lastUpdate > performance.now()) break;
 			lastUpdate += 1000 / 120;
+			stopwatch += 1 / 120;
 			physics();
 		}
 
@@ -613,6 +692,9 @@ function draw() {
 			stopAllSounds();
 			sound('death.flac', null, 3);
 		} else {
+			const [width, height] = [main.width, main.height];
+			const zoomMult = height / 720 * camera.zoom;
+
 			const sizeMult = height / 2000;
 			ctx.fillStyle = "#000";
 			ctx.fillRect(0, 0, width, height);
@@ -654,8 +736,28 @@ function draw() {
 			ctx.strokeStyle = "#48b";
 			ctx.lineWidth = height / 200;
 			ctx.stroke();
+
+			ctx.strokeStyle = "#800";
+			ctx.lineWidth = 10;
+			const {x, y} = getWorldPosition({x: plr.x, y: plr.y - 36});
+			const r = Math.PI * 0.5;
+			ctx.beginPath();
+			ctx.arc(x, y, zoomMult * 80, -r, 2 * Math.PI - r);
+			ctx.stroke();
+			ctx.strokeStyle = "#f55";
+			ctx.beginPath();
+			ctx.arc(x, y, zoomMult * 80, -r, -r + plr.hp / 100 * 2 * Math.PI);
+			ctx.stroke();
 		}
 	}
+
+	ctx.globalAlpha = 1;
+	ctx.fillStyle = "#fff";
+	ctx.textAlign = "center";
+	ctx.textBaseline = "middle";
+	const sizeMult = Math.floor(height / 40) / 24
+	ctx.font = `${Math.floor(height / 40)}px pixel`;
+	letter(stopwatch.toFixed(2), width / 2, sizeMult * 15, 0)
 
 	clicked = false;
 
