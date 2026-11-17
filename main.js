@@ -22,6 +22,7 @@ let sfx = {};
 
 // JAVASCRIPT GIVE US A NATIVE LERP FUNCTION PLEASEEEEEE
 const lerp = (a, b, t) => a * (1 - t) + b * t;
+const clamp = (a, m, n) => Math.min(Math.max(a, m), n);
 
 const rpc = () => {
 	const angle = Math.random() * 2 * Math.PI;
@@ -224,7 +225,6 @@ let dialogues = {
 		"Thank you, brave one.",
 		"The world is rescued from his oppression.",
 		"YOU WIN!",
-		"Made for Crescent Hackclub 2026",
 	]
 }
 
@@ -290,6 +290,10 @@ const plr = {
 	vy: 0,
 	hp: 100,
 	iframes: 0,
+	dashDir: null,
+	lastDashPress: 0,
+	dashCD: 0,
+	willDash: false,
 }
 const boss = {
 	x: 0,
@@ -307,9 +311,30 @@ document.addEventListener('click', e => {
 
 let keysDown = new Set();
 
+document.addEventListener('contextmenu', e => {
+	e.preventDefault();
+
+})
+
 document.addEventListener('keydown', e => {
 	e.preventDefault();
-	if (!keysDown.has(e.code)) keysDown.add(e.code);
+	if (!keysDown.has(e.code)) {
+		keysDown.add(e.code);
+
+		if (!pepTalk && plr.dashCD <= 0) {
+			if (e.code == "KeyA" || e.code == "KeyD") {
+				const dir = e.code == "KeyD";
+				console.log(dir, plr.dashDir, (performance.now() - plr.lastDashPress));
+				if (plr.dashDir == dir && (performance.now() - plr.lastDashPress) < 200) {
+					plr.willDash = true;
+					plr.lastDashPress = 0;
+				} else {
+					plr.dashDir = dir;
+					plr.lastDashPress = performance.now();
+				}
+			}
+		}
+	}
 });
 document.addEventListener('keyup', e => {
 	e.preventDefault();
@@ -371,7 +396,7 @@ class Particle {
 		const ls = ease(data.easesize ?? 0, t);
 		const size = lerp(data.ss, data.es, ls);
 		ctx.beginPath();
-		rect(lerp(data.s.x, data.e?.x ?? data.s.x, lp), lerp(data.s.y, data.e?.y ?? data.s.y, lp), size, size, true, true);
+		rect(lerp(data.s.x, data.e?.x ?? data.s.x, lp), lerp(data.s.y, data.e?.y ?? data.s.y, lp), size, size * (data.sr ?? 1), true, true);
 		if (data.clr) {
 			ctx.fillStyle = data.clr;
 			ctx.fill();
@@ -421,9 +446,9 @@ function dmg(amt) {
 }
 
 function angle(current, target) {
-	let d = (target - current) % 360;
-	if (d < -180) d += 360;
-	if (d > 180) d -= 360;
+	let d = (target - current) % Math.PI * 2;
+	if (d < -Math.PI) d += Math.PI * 2;
+	if (d > Math.PI) d -= Math.PI * 2;
 	return d;
 }
 
@@ -433,24 +458,40 @@ class AttackMissile extends Attack {
 		super(660);
 		this.x = boss.x;
 		this.y = boss.y;
+		this.vx = 0;
+		this.vy = 0;
 		this.rot = (Math.random() - 0.5) * 2 * Math.PI;
+		this.vrot = (Math.random() - 0.5) * 2 * Math.PI;
 		this.points = [];
+		this.collision = { w: 0, h: 0, r: 0 };
 		this.boom = false;
+		ss += 50;
+		sound("shatter.mp3", audio.currentTime, 1);
 	}
 
 	update() {
-
-		if (t >= 1 && !this.boom) {
+		const target = Math.atan2(plr.y - this.y, plr.x - this.x);
+		const angled = angle(this.rot, target);
+		this.rot += ((angled > 0 && angled < 180) ? 0.2 : -0.2) + (Math.random() - 0.5) * 0.35;
+		this.vx += Math.cos(this.rot) * 0.6;
+		this.vy += Math.sin(this.rot) * 0.6;
+		this.x += this.vx;
+		this.y += this.vy;
+		this.vx *= 0.9;
+		this.vy *= 0.9;
+		this.collision.x = this.x;
+		this.collision.y = this.y;
+		let inRange = collision(plrCollision, this.collision);
+		if (((f - this.start) >= 600 && !this.boom) || inRange) {
 			this.boom = true;
-			let hit = false
-			for (let i = 0; i < this.amt; i++) {
-				if (collision(plrCollision, this.hitboxes[i])) hit = true;
-			}
+			this.collision.w = 128;
+			this.collision.h = 128;
+			const hit = collision(plrCollision, this.collision);
 			if (hit) {
-				dmg(40);
+				dmg(35);
 			}
-			ss += 150;
-			sound("shatter.mp3", audio.currentTime, 2);
+			ss += 25;
+			sound("shatter.mp3", audio.currentTime, 1.5);
 		}
 	}
 
@@ -458,9 +499,11 @@ class AttackMissile extends Attack {
 		if (lastDraw !== "missile") {
 			lastDraw = "missile";
 		}
-		ctx.fillStyle = "#fff";
-		ctx.strokeStyle = "#fff";
-		rect(this.x, this.y, 24, 24, false, true);
+		if (!this.boom) {
+			ctx.fillStyle = "#fff";
+			ctx.strokeStyle = "#fff";
+			rect(this.x, this.y, 24, 24, false, true);
+		}
 	}
 }
 
@@ -668,6 +711,25 @@ function physics() {
 	if (keysDown.has("KeyS")) {
 		plr.vy -= 0.4;
 	}
+	if (plr.willDash && plr.dashCD <= 0) {
+		plr.willDash = false;
+		plr.dashCD = 120;
+	}
+
+	if (plr.dashCD > 0) {
+		if (plr.dashCD > 105) {
+			plr.vx = (25 - (120 - plr.dashCD)) * (plr.dashDir ? 1 : -1);
+			particles.add(new Particle({
+				s: { x: plr.x, y: plr.y },
+				ss: 24, es: 24,
+				sr: 3 / 2,
+				easepos: 0, easesize: 0,
+				l: 50,
+				clr: "#fff8"
+			}));
+		}
+		plr.dashCD--;
+	}
 	plr.vx *= 0.85;
 	plr.x += plr.vx;
 	plr.vy -= 0.2;
@@ -706,7 +768,7 @@ function physics() {
 	let focus = 1;
 	atk++;
 	if (atk > 0) {
-		atk = atk % 2100;
+		atk = atk % 2800;
 	}
 
 	if (atk == 0 || atk == 120 || atk == 240 || atk == 360) {
@@ -726,6 +788,12 @@ function physics() {
 		if (atk % 3 !== 0) attacks.add(new AttackBulletValley());
 		focus = 0.001;
 		dist += 200;
+	}
+	for (let n = 0; n < 10; n++) {
+		if (atk == 2100 + n * 10) {
+			attacks.add(new AttackMissile());
+			break;
+		}
 	}
 	boss.focus = lerp(boss.focus, focus, 0.01);
 
