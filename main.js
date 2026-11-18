@@ -465,8 +465,6 @@ class AttackMissile extends Attack {
 		this.y = boss.y;
 		this.vx = 0;
 		this.vy = 0;
-		this.rot = (Math.random() - 0.5) * 2 * Math.PI;
-		this.vrot = (Math.random() - 0.5) * 2 * Math.PI;
 		this.points = [];
 		this.collision = { w: 0, h: 0, r: 0 };
 		this.boom = false;
@@ -475,19 +473,17 @@ class AttackMissile extends Attack {
 	}
 
 	update() {
-		const target = Math.atan2(plr.y - this.y, plr.x - this.x);
-		const angled = angle(this.rot, target);
-		this.rot += ((angled > 0 && angled < 180) ? 0.2 : -0.2) + (Math.random() - 0.5) * 0.35;
-		this.vx += Math.cos(this.rot) * 0.6;
-		this.vy += Math.sin(this.rot) * 0.6;
+		const target = Math.atan2(plr.y - this.y, plr.x - this.x) + (Math.random() - 0.5) * 0.5;
+		this.vx += Math.cos(target) * 0.4;
+		this.vy += Math.sin(target) * 0.4;
 		this.x += this.vx;
 		this.y += this.vy;
-		this.vx *= 0.9;
-		this.vy *= 0.9;
+		this.vx *= 0.990;
+		this.vy *= 0.990;
 		this.collision.x = this.x;
 		this.collision.y = this.y;
 		let inRange = collision(plrCollision, this.collision);
-		if (((f - this.start) >= 600 && !this.boom) || inRange) {
+		if (((f - this.start) >= 600 || inRange) && !this.boom) {
 			this.boom = true;
 			this.collision.w = 128;
 			this.collision.h = 128;
@@ -544,12 +540,13 @@ class AttackBulletValley extends Attack {
 }
 
 class AttackCutter extends Attack {
-	constructor(less) {
+	constructor(silent) {
 		super(300);
 		this.sr = Math.random() * Math.PI * 2;
 		this.er = this.sr + Math.random() * Math.PI * 0 + 20 * (Math.random() > 0.5 ? -1 : 1);
-		this.amt = less ? 1 : Math.floor(Math.random() * 4 + 1);
+		this.amt = Math.floor(Math.random() * 4 + 1);
 		this.boom = false;
+		this.silent = silent;
 		const { x, y } = rp();
 		this.x = plr.x + x * 160;
 		this.y = plr.y + y * 160;
@@ -575,8 +572,10 @@ class AttackCutter extends Attack {
 			if (hit) {
 				dmg(40);
 			}
-			ss += 150;
-			sound("shatter.mp3", audio.currentTime, 2);
+			if (!this.silent) {
+				ss += 300;
+				sound("shatter.mp3", audio.currentTime, 3);
+			}
 		}
 	}
 
@@ -677,6 +676,7 @@ window.particles = particles;
 
 let atk = 0;
 let ss = 0;
+const swordhitbox = {w: 48, h: 128};
 
 let attacks = new Set();
 window.attacks = attacks;
@@ -785,7 +785,7 @@ function physics() {
 	for (let n = 600; n < 1200; n += 150) {
 		if (atk == n) {
 			attacks.add(new AttackCutter());
-			attacks.add(new AttackCutter());
+			attacks.add(new AttackCutter(), true);
 			break;
 		}
 	}
