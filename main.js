@@ -210,7 +210,7 @@ function ease(a, n) {
 let dialogues = {
 	a: [
 		"The world, blighted by the evils of this Earth.",
-		"The determination of the fallen again him were in vain.",
+		"The determination of the fallen against him were in vain.",
 		"A brave one stood out against the rest...",
 		"You.",
 		"One among the strongest within this treacherous land.",
@@ -256,8 +256,8 @@ function rotrect(rect, override, useRect) {
 	const transform = ctx.getTransform();
 	ctx.translate((rect.x - camera.x) * zoomMult + width / 2, -(rect.y - camera.y) * zoomMult + height / 2);
 	ctx.rotate(rect.r);
-	ctx[useRect ? "rect" : "fillRect"]((override.w ?? rect.w) * zoomMult * -0.5, (override.h ?? rect.h) * zoomMult * -0.5, (override.w ?? rect.w) * zoomMult, (override.h ?? rect.h) * zoomMult);
-	ctx.setTransform(ctx);
+	ctx[useRect ? "rect" : "fillRect"]((override?.w ?? rect.w) * zoomMult * -0.5, (override?.h ?? rect.h) * zoomMult * -0.5, (override?.w ?? rect.w) * zoomMult, (override?.h ?? rect.h) * zoomMult);
+	ctx.setTransform(transform);
 }
 
 function rect(x, y, w, h, useRect, center) {
@@ -282,6 +282,7 @@ function letter(t, x, y, r) {
 	ctx.setTransform(init);
 }
 
+let clicking = false;
 let clicked = false;
 const plr = {
 	x: 0,
@@ -294,6 +295,8 @@ const plr = {
 	lastDashPress: 0,
 	dashCD: 0,
 	willDash: false,
+	attacking: 0,
+	facing: false,
 }
 const boss = {
 	x: 0,
@@ -305,15 +308,28 @@ const boss = {
 	rotation: 0,
 }
 
-document.addEventListener('mousedown', e => {
-	clicked = true;
+let mx = 0;
+let my = 0;
 
+document.addEventListener('mousedown', e => {
 	if (e.button === 2) {
 		const dir = plr.vx > 0;
 		plr.dashDir = dir;
 		plr.willDash = true;
 		plr.lastDashPress = 0;
+	} else if (e.button === 0) {
+		clicking = true;
+		clicked = true;
 	}
+});
+document.addEventListener('mouseup', e => {
+	if (e.button === 0) {
+		clicking = false;
+	}
+});
+document.addEventListener('mousemove', e => {
+	mx = e.clientX - main.clientWidth / 2;
+	my = -(e.clientY - main.clientHeight / 2);
 });
 
 let keysDown = new Set();
@@ -415,6 +431,7 @@ class Particle {
 }
 
 const plrCollision = { x: plr.x, y: plr.y, w: 16, h: 24, r: 0 };
+const bossCollision = { x: plr.x, y: plr.y, w: 16, h: 24, r: 0 };
 let f = 0; // btw physics runs at 120 fps
 let lastDraw = undefined;
 
@@ -463,7 +480,7 @@ class AttackMissile extends Attack {
 		super(660);
 		this.x = boss.x;
 		this.y = boss.y;
-		const {x, y} = rp();
+		const { x, y } = rp();
 		this.vx = x * 25;
 		this.vy = y * 25;
 		this.points = [];
@@ -696,11 +713,38 @@ class AttackShatter extends Attack {
 	}
 }
 
+class dmgIndicator {
+	constructor(x, y, amt, crit) {
+		this.x = x;
+		this.y = y;
+		{
+			const { x, y } = rp();
+			this.goalx = x;
+			this.goaly = y;
+		}
+		this.amt = amt;
+		this.crit = crit;
+		this.start = performance.now();
+	}
+
+	get expired() {
+		return (performance.now() - this.start) > (this.crit ? 240 : 120);
+	}
+
+	draw() {
+		const sizeMult = height / 30;
+		const lifetime = (this.crit ? 240 : 120);
+		const s = ease(14, (performance.now() - this.start) / lifetime)
+		const pos = getWorldPosition(this.x, this.y);
+		ctx.font = this.crit ? `${Math.floor(sizeMult * 2)}px pixel` : `${Math.floor(sizeMult)}px pixel`;
+	}
+}
+
 window.particles = particles;
 
 let atk = 0;
 let ss = 0;
-const swordhitbox = {w: 48, h: 128};
+const swordhitbox = { w: 48, h: 128 };
 
 let attacks = new Set();
 window.attacks = attacks;
@@ -746,6 +790,14 @@ function physics() {
 		plr.iframes = Math.max(plr.iframes, 25);
 	}
 
+	if (plr.attacking > 0) {
+		plr.attacking--;
+	}
+	if (clicking && plr.attacking <= 0) {
+		plr.attacking = 25;
+		plr.facing = mx > 0;
+	}
+
 	if (plr.dashCD > 0) {
 		if (plr.dashCD > 165) {
 			plr.vx = (25 - (180 - plr.dashCD)) * (plr.dashDir ? 1 : -1);
@@ -782,6 +834,10 @@ function physics() {
 		plr.vx = 0;
 	}
 
+	swordhitbox.r = (2.5 - 3.25 * ((plr.attacking - 5) / 20)) * (plr.facing ? 1 : -1);
+	swordhitbox.x = plr.x + Math.sin(swordhitbox.r) * 72;
+	swordhitbox.y = plr.y + Math.cos(swordhitbox.r) * 72;
+
 	if (f % 12 === 0 && plr.vy !== 0) {
 		const { x, y } = rp();
 		let ox = (Math.random() - 0.5) * 24;
@@ -808,16 +864,19 @@ function physics() {
 	}
 	for (let n = 600; n < 1200; n += 150) {
 		if (atk == n) {
+			boss.rotation += (Math.random() - 0.5) * 1;
 			attacks.add(new AttackCutter());
 			attacks.add(new AttackCutter(), true);
 			break;
 		}
 	}
 	let dist = 0;
+	if (atk > 1300 && atk < 1900) {
+		dist += 200;
+	}
 	if (atk > 1400 && atk < 1900) {
 		if (atk % 3 !== 0) attacks.add(new AttackBulletValley());
 		focus = 0.001;
-		dist += 200;
 	}
 	for (let n = 0; n < 10; n++) {
 		if (atk == 2100 + n * 10) {
@@ -835,6 +894,8 @@ function physics() {
 	boss.vy = lerp(boss.vy, (targety - boss.y) * 0.1, 0.02 * focus);
 	boss.x += boss.vx * focus;
 	boss.y += boss.vy * focus;
+	bossCollision.x = boss.x;
+	bossCollision.y = boss.y;
 
 	camera.x = plr.x + (Math.random() - 0.5) * ss;
 	camera.y = plr.y + (Math.random() - 0.5) * ss;
@@ -871,7 +932,7 @@ function draw() {
 		ctx.fillStyle = "#fff";
 		ctx.textAlign = "center";
 		ctx.textBaseline = "middle";
-		const sizeMult = Math.floor(height / 30) / 24
+		const sizeMult = Math.floor(height / 30) / 24;
 		ctx.font = `${Math.floor(height / 30)}px pixel`;
 		let at = (now - pepTalkInfo.lineStart) / 1000 * 40;
 		let currentLine = pepTalkInfo.content[pepTalkInfo.line];
@@ -976,6 +1037,11 @@ function draw() {
 			ctx.fillStyle = "#444";
 			for (let i = -50; i < 50; i++) {
 				rect((Math.floor(plr.x / 54) + i) * 54 - 1, -18, 2, 16);
+			}
+
+			if (plr.attacking > 5) {
+				ctx.fillStyle = "#8f8";
+				rotrect(swordhitbox, { w: 32 });
 			}
 
 			lastDraw = null;
