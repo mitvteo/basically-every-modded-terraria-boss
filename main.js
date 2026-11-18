@@ -718,12 +718,13 @@ function physics() {
 	}
 	if (plr.willDash && plr.dashCD <= 0) {
 		plr.willDash = false;
-		plr.dashCD = 120;
+		plr.dashCD = 180;
+		plr.iframes = Math.max(plr.iframes, 25);
 	}
 
 	if (plr.dashCD > 0) {
-		if (plr.dashCD > 105) {
-			plr.vx = (25 - (120 - plr.dashCD)) * (plr.dashDir ? 1 : -1);
+		if (plr.dashCD > 165) {
+			plr.vx = (25 - (180 - plr.dashCD)) * (plr.dashDir ? 1 : -1);
 			particles.add(new Particle({
 				s: { x: plr.x, y: plr.y },
 				ss: 24, es: 24,
