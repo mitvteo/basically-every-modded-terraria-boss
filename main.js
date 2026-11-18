@@ -305,15 +305,21 @@ const boss = {
 	rotation: 0,
 }
 
-document.addEventListener('click', e => {
+document.addEventListener('mousedown', e => {
 	clicked = true;
+
+	if (e.button === 2) {
+		const dir = plr.vx > 0;
+		plr.dashDir = dir;
+		plr.willDash = true;
+		plr.lastDashPress = 0;
+	}
 });
 
 let keysDown = new Set();
 
 document.addEventListener('contextmenu', e => {
 	e.preventDefault();
-
 })
 
 document.addEventListener('keydown', e => {
@@ -324,7 +330,6 @@ document.addEventListener('keydown', e => {
 		if (!pepTalk && plr.dashCD <= 0) {
 			if (e.code == "KeyA" || e.code == "KeyD") {
 				const dir = e.code == "KeyD";
-				console.log(dir, plr.dashDir, (performance.now() - plr.lastDashPress));
 				if (plr.dashDir == dir && (performance.now() - plr.lastDashPress) < 200) {
 					plr.willDash = true;
 					plr.lastDashPress = 0;
