@@ -463,8 +463,9 @@ class AttackMissile extends Attack {
 		super(660);
 		this.x = boss.x;
 		this.y = boss.y;
-		this.vx = 0;
-		this.vy = 0;
+		const {x, y} = rp();
+		this.vx = x * 25;
+		this.vy = y * 25;
 		this.points = [];
 		this.collision = { w: 0, h: 0, r: 0 };
 		this.boom = false;
@@ -473,7 +474,7 @@ class AttackMissile extends Attack {
 	}
 
 	update() {
-		const target = Math.atan2(plr.y - this.y, plr.x - this.x) + (Math.random() - 0.5) * 0.5;
+		const target = Math.atan2(plr.y - this.y, plr.x - this.x) + (Math.random() - 0.5) * 1;
 		this.vx += Math.cos(target) * 0.4;
 		this.vy += Math.sin(target) * 0.4;
 		this.x += this.vx;
