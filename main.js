@@ -492,6 +492,17 @@ class AttackMissile extends Attack {
 			if (hit) {
 				dmg(35);
 			}
+			for (let _ = 0; _ < 15; _++) {
+				const { x, y } = rp();
+				particles.add(new Particle({
+					s: { x: this.x, y: this.y },
+					e: { x: this.x + x * 160, y: this.y + y * 160 },
+					ss: 128 * Math.random(), es: 0,
+					easepos: 10, easesize: 10,
+					l: Math.random() * 750 + 1000,
+					clr: "#f80"
+				}));
+			}
 			ss += 25;
 			sound("shatter.mp3", audio.currentTime, 1.5);
 		}
@@ -504,6 +515,18 @@ class AttackMissile extends Attack {
 		if (!this.boom) {
 			ctx.fillStyle = "#fff";
 			ctx.strokeStyle = "#fff";
+
+			for (let _ = 0; _ < 2; _++) {
+				const { x, y } = rp();
+				particles.add(new Particle({
+					s: { x: this.x, y: this.y },
+					e: { x: this.x + x * 96, y: this.y + y * 96 },
+					ss: 24 * Math.random(), es: 0,
+					easepos: 10, easesize: 10,
+					l: Math.random() * 1000 + 1000,
+					clr: "#fff8"
+				}));
+			}
 			rect(this.x, this.y, 24, 24, false, true);
 		}
 	}
