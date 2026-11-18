@@ -814,7 +814,7 @@ function physics() {
 		}
 	}
 	let dist = 0;
-	if (atk > 1400 && atk < 1950) {
+	if (atk > 1400 && atk < 1900) {
 		if (atk % 3 !== 0) attacks.add(new AttackBulletValley());
 		focus = 0.001;
 		dist += 200;
