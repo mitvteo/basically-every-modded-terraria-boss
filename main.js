@@ -1009,8 +1009,8 @@ function physics() {
 
 	let focus = 1;
 	atk++;
-	if (atk > 0) {
-		atk = atk % 2800;
+	if (atk > 2800) {
+		atk = 0;
 		boss.roar = false;
 	}
 
@@ -1188,9 +1188,12 @@ function draw() {
 				pepTalkInfo.line = 0;
 				pepTalkInfo.closed = false;
 				lastUpdate = performance.now();
+				boss.hp = maxBossHP;
+				boss.hpLerp = 0;
 				atk = -1000;
+				ss = 0;
 				plr.hp = 100;
-				plr.x = plr.y = plr.vx = plr.vy = 0;
+				boss.x = boss.y = boss.vx = boss.vy = plr.x = plr.y = plr.vx = plr.vy = 0;
 				attacks.clear();
 				stopwatch = 0;
 			}
