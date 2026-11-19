@@ -16,7 +16,9 @@ let imgs = {};
 [
 	'death.flac',
 	'shatter.mp3',
-	'glass.mp3'
+	'glass.mp3',
+	'swing.wav',
+	'terra.wav'
 ].forEach(async v => {
 	sfx[v] = await audio.decodeAudioData(await (await fetch(`assets/sounds/${v}`)).arrayBuffer());
 });
@@ -307,7 +309,7 @@ const plr = {
 	attacking: 0,
 	facing: false,
 }
-const maxBossHP = 75000;
+const maxBossHP = 65000;
 const boss = {
 	x: 0,
 	y: 0,
@@ -911,6 +913,8 @@ function physics() {
 		plr.attacking = 25;
 		plr.facing = mx > 0;
 		attacks.add(new TerraBeam(Math.atan2(-my, mx)));
+		sound('swing.wav', null, 2);
+		sound('terra.wav', null, 2);
 	}
 
 	if (plr.dashCD > 0) {
@@ -1022,8 +1026,8 @@ function physics() {
 		if (atk % 3 !== 0) attacks.add(new AttackBulletValley());
 		focus = 0.001;
 	}
-	for (let n = 0; n < 10; n++) {
-		if (atk == 2100 + n * 10) {
+	for (let n = 0; n < 5; n++) {
+		if (atk == 2100 + n * 15) {
 			attacks.add(new AttackMissile());
 			break;
 		}
