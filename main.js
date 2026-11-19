@@ -319,6 +319,7 @@ const boss = {
 	vy: 0,
 	hp: maxBossHP,
 	hpLerp: 0,
+	roar: true,
 	lastHit: 0,
 	focus: 1,
 	rotation: 0,
@@ -1010,6 +1011,7 @@ function physics() {
 	atk++;
 	if (atk > 0) {
 		atk = atk % 2800;
+		boss.roar = false;
 	}
 
 	const phase = boss.hp <= (maxBossHP / 2);
@@ -1017,9 +1019,13 @@ function physics() {
 		boss.reachedSecondPhase = true;
 		atk = -1000;
 	}
-	ssAdd = ease(11, (atk + 810) / 50) - ease(11, (atk + 600) / 1250);
-	camera.toBoss = ease(11, (atk + 925) / 150) - ease(11, (atk + 200) / 150);
-
+	if (boss.roar) {
+		ssAdd = ease(11, (atk + 810) / 50) - ease(11, (atk + 600) / 1250);
+		camera.toBoss = ease(11, (atk + 925) / 150) - ease(11, (atk + 200) / 150);
+	} else {
+		ssAdd = 0;
+		camera.toBoss = 0;
+	}
 	if (Math.random() <= ssAdd) {
 		const { x, y } = rpc();
 		particles.add(new Particle({
@@ -1038,6 +1044,7 @@ function physics() {
 
 	if (atk < 0) {
 		focus = 0.01;
+		boss.roar = true;
 	}
 
 	for (let n = 0; n <= 360; n += (phase ? 90 : 120)) {
