@@ -1125,9 +1125,9 @@ function draw() {
 		ctx.fillRect(0, 0, width, height);
 
 		ctx.fillStyle = "#fff";
+		const sizeMult = Math.floor(height / 30) / 24;
 		ctx.textAlign = "center";
 		ctx.textBaseline = "middle";
-		const sizeMult = Math.floor(height / 30) / 24;
 		ctx.font = `${Math.floor(height / 30)}px pixel`;
 		let at = (now - pepTalkInfo.lineStart) / 1000 * 40;
 		let currentLine = pepTalkInfo.content[pepTalkInfo.line];
@@ -1313,7 +1313,22 @@ function draw() {
 			ctx.fillStyle = "#fff";
 			ctx.fillRect(width * 0.25, height / 30, (width * 0.5) * boss.hpLerp / maxBossHP, height / 30);
 			ctx.globalAlpha = 1;
-
+			{
+				const sizeMult = height / 30 / 24;
+				ctx.textAlign = "center";
+				ctx.textBaseline = "middle";
+				ctx.font = `${Math.floor(height / 30)}px pixel`;
+				'"AOXERL"'.split("").forEach((v, i) => {
+					const t = now / 250 + i * 140;
+					const x = width / 2 + i * 24 * sizeMult + Math.sin(t) * 1.5 * sizeMult - 8.5 * 24 * sizeMult / 2;
+					const y = height / 30 * 1.5 + Math.cos(t) * 1.5 * sizeMult;
+					const r = 0 + Math.sin(t + 0.8) * 0.1;
+					ctx.fillStyle = "#0008";
+					letter(v, x + sizeMult * 2, y + sizeMult * 2, r);
+					ctx.fillStyle = "#fff";
+					letter(v, x, y, r);
+				});
+			}
 			particles.forEach(v => {
 				if (v.expired) particles.delete(v);
 				else v.draw();
