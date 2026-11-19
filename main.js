@@ -453,6 +453,8 @@ function dmg(amt) {
 		sound('glass.mp3', null, 6);
 		ss += 350;
 
+		particles.add(new DmgIndicator(plr.x, plr.y, Math.floor(amt), false, true));
+
 		for (let _ = 0; _ < 15; _++) {
 			const { x, y } = rp();
 			particles.add(new Particle({
@@ -713,41 +715,53 @@ class AttackShatter extends Attack {
 	}
 }
 
-class dmgIndicator {
-	constructor(x, y, amt, crit) {
+class DmgIndicator {
+	constructor(x, y, amt, crit, ow) {
 		this.x = x;
 		this.y = y;
 		{
 			const { x, y } = rp();
-			this.goalx = x;
-			this.goaly = y;
+			this.goalx = x * (crit ? 48 : 24);
+			this.goaly = y * 5 + (crit ? 48 : 60);
 		}
+		this.rot = (Math.random() - 0.5) * 0.1;
+		this.goalrot = (Math.random() - 0.5) * 0.1;
 		this.amt = amt;
 		this.crit = crit;
+		this.ow = ow;
 		this.start = performance.now();
 	}
 
 	get expired() {
-		return (performance.now() - this.start) > (this.crit ? 240 : 120);
+		return (performance.now() - this.start) > (this.crit ? 2200 : 1100);
 	}
 
 	draw() {
-		const sizeMult = height / 30;
-		const lifetime = (this.crit ? 240 : 120);
-		const s = ease(14, (performance.now() - this.start) / lifetime)
-		const pos = getWorldPosition(this.x, this.y);
-		ctx.font = this.crit ? `${Math.floor(sizeMult * 2)}px pixel` : `${Math.floor(sizeMult)}px pixel`;
+		const sizeMult = main.height / 25;
+		const lifetime = (this.crit ? 2200 : 1100);
+		const t = (performance.now() - this.start) / lifetime;
+		const s = ease(14, t) || 0;
+		if (t > 0.8) {
+			const rt = (t - 0.8) / 0.2;
+			ctx.globalAlpha = 1 - rt;
+		}
+		const { x, y } = getWorldPosition({ x: this.x + this.goalx * s, y: this.y + this.goaly * s });
+		ctx.font = this.crit ? `${Math.floor(sizeMult * 1.5)}px pixel` : `${Math.floor(sizeMult)}px pixel`;
+		ctx.fillStyle = "#0008";
+		letter(this.amt, x + sizeMult / 8, y + sizeMult / 8, this.rot + this.goalrot * s);
+		ctx.fillStyle = this.crit ? "#FF641E" : (this.ow ? "#FF505A" : "#FFA050");
+		letter(this.amt, x, y, this.rot + this.goalrot * s);
+		if (t > 0.8) {
+			ctx.globalAlpha = 1;
+		}
 	}
 }
-
-window.particles = particles;
 
 let atk = 0;
 let ss = 0;
 const swordhitbox = { w: 48, h: 128 };
 
 let attacks = new Set();
-window.attacks = attacks;
 
 let stopwatch = 0;
 
