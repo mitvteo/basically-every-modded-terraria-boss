@@ -11,6 +11,7 @@ let buffer;
 let bgm;
 
 let sfx = {};
+let imgs = {};
 
 [
 	'death.flac',
@@ -18,7 +19,15 @@ let sfx = {};
 	'glass.mp3'
 ].forEach(async v => {
 	sfx[v] = await audio.decodeAudioData(await (await fetch(`assets/sounds/${v}`)).arrayBuffer());
-})
+});
+
+[
+	'beam.png',
+	'blade.png'
+].forEach(async v => {
+	imgs[v] = new Image();
+	imgs[v].src = `assets/images/${v}`;
+});
 
 // JAVASCRIPT GIVE US A NATIVE LERP FUNCTION PLEASEEEEEE
 const lerp = (a, b, t) => a * (1 - t) + b * t;
@@ -298,12 +307,15 @@ const plr = {
 	attacking: 0,
 	facing: false,
 }
+const maxBossHP = 75000;
 const boss = {
 	x: 0,
 	y: 0,
 	vx: 0,
 	vy: 0,
-	hp: 15000,
+	hp: maxBossHP,
+	hpLerp: 0,
+	lastHit: 0,
 	focus: 1,
 	rotation: 0,
 	iframes: 0,
@@ -480,18 +492,30 @@ function dmgBoss(amt, crit) {
 	if (boss.iframes <= 0) {
 		boss.hp -= amt;
 		boss.iframes = 30;
+		boss.lastHit = performance.now();
 		ss += 50;
 
 		particles.add(new DmgIndicator(boss.x, boss.y, Math.floor(amt), crit, false));
 
 		for (let _ = 0; _ < 30; _++) {
 			const { x, y } = rp();
+			let ox = 0;
+			let oy = 0;
+			let o = Math.floor(Math.random() * 4);
+			switch (o) {
+				case 0: ox = 1; break;
+				case 1: oy = 1; break;
+				case 2: ox = -1; break;
+				case 3: oy = -1; break;
+			}
+			ox *= Math.random();
+			oy *= Math.random();
 			particles.add(new Particle({
 				s: { x: boss.x, y: boss.y },
-				e: { x: boss.x + x * 96, y: boss.y + y * 96 },
+				e: { x: boss.x + x * 12 + ox * 96, y: boss.y + y * 12 + oy * 96 },
 				ss: 24 * Math.random(), es: 0,
 				easepos: 10, easesize: 10,
-				l: Math.random() * 1000 + 1000,
+				l: Math.random() * 500 + 500,
 				clr: "#8f8", additive: true
 			}));
 		}
@@ -747,16 +771,16 @@ class TerraBeam extends Attack {
 	constructor(dir) {
 		super(70);
 		this.dir = dir;
-		this.x = plr.x;
-		this.y = plr.y;
+		this.x = plr.x + Math.cos(this.dir) * 50;
+		this.y = plr.y + Math.sin(this.dir) * 50;
 		this.dmg = 85;
 		this.speed = 1;
-		this.collision = {w: 75, h: 200, r: dir};
+		this.collision = { w: 75, h: 200, r: dir };
 	}
 
 	update() {
-		this.x += Math.cos(this.dir) * 15 * this.speed;
-		this.y -= Math.sin(this.dir) * 15 * this.speed;
+		this.x += Math.cos(this.dir) * 25 * this.speed;
+		this.y -= Math.sin(this.dir) * 25 * this.speed;
 		this.collision.x = this.x;
 		this.collision.y = this.y;
 		this.speed *= 0.98;
@@ -764,18 +788,40 @@ class TerraBeam extends Attack {
 		if (boss.iframes <= 0 && collision(this.collision, bossCollision)) {
 			const crit = Math.random() <= 0.04;
 			// according to the wiki the Terra Blade projectile DOES deal 1.5x damage than swing
-			const dmg = this.dmg * (Math.random() * 0.15 + 1) * (crit ? 2 : 1) * 1.5; 
+			const dmg = this.dmg * (Math.random() * 0.15 + 1) * (crit ? 2 : 1) * 1.5;
 			this.dmg *= 0.75; // but to balance it it gets reduced by 25% (the boss DOES sometimes re enter the hitbox)
 			dmgBoss(dmg, crit);
 		}
+
+		const r = (Math.random() - 0.5) * 300;
+		const sx = this.x + Math.sin(this.dir) * r;
+		const sy = this.y + Math.cos(this.dir) * r;
+		particles.add(new Particle({
+			s: { x: sx, y: sy },
+			e: { x: sx, y: sy },
+			ss: 8 * (1 - (1 - Math.random()) ** 3), es: 0,
+			easepos: 10, easesize: 0,
+			l: 150 + Math.random() * 250,
+			clr: "#8f8", additive: true
+		}));
 	}
 
 	draw() {
-		if (lastDraw !== "terrabeam") {
-			ctx.fillStyle = "#8f8";
-			lastDraw = "terrabeam";
-		}
-		rotrect(this.collision);
+		const [width, height] = [main.width, main.height];
+		const zoomMult = height / 720 * camera.zoom;
+		const t = (f - this.start) / 70;
+		const size = 1 - ease(13, t);
+		const iw = imgs['beam.png'].width * zoomMult / 1.75 * size;
+		const ih = imgs['beam.png'].height * zoomMult / 1.75 * size;
+		const transform = ctx.getTransform();
+		ctx.translate((this.collision.x - camera.x) * zoomMult + width / 2, -(this.collision.y - camera.y) * zoomMult + height / 2);
+		ctx.rotate(this.collision.r + 0.1);
+		ctx.globalCompositeOperation = "lighter";
+		ctx.globalAlpha = clamp(t * 4, 0, 1);
+		ctx.drawImage(imgs['beam.png'], iw / -2, ih / -2, iw, ih);
+		ctx.globalAlpha = 1;
+		ctx.globalCompositeOperation = "source-over";
+		ctx.setTransform(transform);
 	}
 }
 
@@ -788,8 +834,8 @@ class DmgIndicator {
 			this.goalx = x * (crit ? 48 : 24);
 			this.goaly = y * 5 + (crit ? 48 : 60);
 		}
-		this.rot = (Math.random() - 0.5) * 0.1;
-		this.goalrot = (Math.random() - 0.5) * 0.1;
+		this.rot = (Math.random() - 0.5) * 0.2;
+		this.goalrot = (Math.random() - 0.5) * 0.2;
 		this.amt = amt;
 		this.crit = crit;
 		this.ow = ow;
@@ -903,7 +949,8 @@ function physics() {
 		plr.vx = 0;
 	}
 
-	swordhitbox.r = (2.5 - 3.25 * ((plr.attacking - 5) / 20)) * (plr.facing ? 1 : -1);
+	const facingMult = (plr.facing ? 1 : -1)
+	swordhitbox.r = (2.5 - 3.6 * ((plr.attacking - 5) / 20)) * facingMult;
 	swordhitbox.x = plr.x + Math.sin(swordhitbox.r) * 72;
 	swordhitbox.y = plr.y + Math.cos(swordhitbox.r) * 72;
 	if (boss.iframes > 0) boss.iframes--;
@@ -911,6 +958,28 @@ function physics() {
 		const crit = Math.random() <= 0.04; // it just like terraria!!!
 		const dmg = 85 * (Math.random() * 0.15 + 1) * (crit ? 2 : 1);
 		dmgBoss(dmg, crit);
+	}
+
+	if (plr.attacking > 5) {
+		ss += 1;
+		for (let _ = 0; _ < 2; _++) {
+			const r = (Math.random() - 0.5) * facingMult;
+			const d = Math.random();
+			const d2 = Math.random() * 35 + 150;
+			const x = plr.x + Math.sin(swordhitbox.r + r) * d2;
+			const y = plr.y + Math.cos(swordhitbox.r + r) * d2;
+			const x2 = plr.x + Math.sin(swordhitbox.r + r + 0.3 * d * facingMult) * d2;
+			const y2 = plr.y + Math.cos(swordhitbox.r + r + 0.3 * d * facingMult) * d2;
+
+			particles.add(new Particle({
+				s: { x, y },
+				e: { x: x2, y: y2 },
+				ss: 8 * (1 - (1 - Math.random()) ** 3), es: 0,
+				easepos: 10, easesize: 0,
+				l: 150 + Math.random() * 250,
+				clr: "#8f8", additive: true
+			}));
+		}
 	}
 
 	if (f % 12 === 0 && plr.vy !== 0) {
@@ -962,6 +1031,8 @@ function physics() {
 	boss.focus = lerp(boss.focus, focus, 0.01);
 
 	boss.rotation += (Math.random() - 0.5) * 0.05;
+
+	boss.hpLerp = lerp(boss.hpLerp, boss.hp, 0.05);
 
 	const targetx = plr.x + Math.cos(boss.rotation) * (320 + dist) + (Math.random() - 0.5) * 48;
 	const targety = plr.y + Math.sin(boss.rotation) * (320 + dist) + (Math.random() - 0.5) * 48;
@@ -1115,8 +1186,37 @@ function draw() {
 			}
 
 			if (plr.attacking > 5) {
-				ctx.fillStyle = "#8f8";
-				rotrect(swordhitbox, { w: 32 });
+				{
+					const transform = ctx.getTransform();
+					const iw = imgs['beam.png'].width * zoomMult / 1.75;
+					const ih = imgs['beam.png'].height * zoomMult / 1.75;
+					ctx.translate(
+						(plr.x + Math.sin(swordhitbox.r - (plr.facing ? 0.25 : -0.25)) * 96 - camera.x) * zoomMult + width / 2, 
+						-(plr.y + Math.cos(swordhitbox.r - (plr.facing ? 0.25 : -0.25)) * 96 - camera.y) * zoomMult + height / 2
+					);
+					ctx.rotate(swordhitbox.r - Math.PI * 0.5 * (plr.facing ? 1 : -1));
+					if (!plr.facing) {
+						ctx.scale(-1, 1);
+					}
+					ctx.globalCompositeOperation = "lighter";
+					ctx.globalAlpha = 0 + clamp((26 - plr.attacking) / 5, 0, 1) - clamp((10 - plr.attacking) / 5, 0, 1);
+					ctx.drawImage(imgs['beam.png'], iw / -2, ih / -2, iw, ih);
+					ctx.globalAlpha = 1;
+					ctx.globalCompositeOperation = "source-over";
+					ctx.setTransform(transform);
+				}
+				{
+					const transform = ctx.getTransform();
+					const iw = imgs['blade.png'].width * zoomMult / 2.5;
+					const ih = imgs['blade.png'].height * zoomMult / 2.5;
+					ctx.translate((swordhitbox.x - camera.x) * zoomMult + width / 2, -(swordhitbox.y - camera.y) * zoomMult + height / 2);
+					ctx.rotate(swordhitbox.r - Math.PI * 0.25 * (plr.facing ? 1 : -1));
+					if (!plr.facing) {
+						ctx.scale(-1, 1);
+					}
+					ctx.drawImage(imgs['blade.png'], iw / -2, ih / -2, iw, ih);
+					ctx.setTransform(transform);
+				}
 			}
 
 			lastDraw = null;
@@ -1148,6 +1248,15 @@ function draw() {
 			ctx.strokeStyle = "#48b";
 			ctx.lineWidth = height / 200;
 			ctx.stroke();
+
+			ctx.fillStyle = "#800";
+			ctx.fillRect(width * 0.25, height / 30, (width * 0.5), height / 30);
+			ctx.fillStyle = "#f33";
+			ctx.fillRect(width * 0.25, height / 30, (width * 0.5) * boss.hpLerp / maxBossHP, height / 30);
+			ctx.globalAlpha = 1 - ease(14, (performance.now() - boss.lastHit) / 500);
+			ctx.fillStyle = "#fff";
+			ctx.fillRect(width * 0.25, height / 30, (width * 0.5) * boss.hpLerp / maxBossHP, height / 30);
+			ctx.globalAlpha = 1;
 
 			particles.forEach(v => {
 				if (v.expired) particles.delete(v);
