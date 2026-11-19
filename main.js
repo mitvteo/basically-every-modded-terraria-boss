@@ -505,7 +505,6 @@ function angle(current, target) {
 	return d;
 }
 
-// TODO
 class AttackMissile extends Attack {
 	constructor() {
 		super(660);
@@ -523,15 +522,15 @@ class AttackMissile extends Attack {
 
 	update() {
 		const target = Math.atan2(plr.y - this.y, plr.x - this.x) + (Math.random() - 0.5) * 1;
-		this.vx += Math.cos(target) * 0.4;
-		this.vy += Math.sin(target) * 0.4;
+		this.vx += Math.cos(target) * 0.35;
+		this.vy += Math.sin(target) * 0.35;
 		this.x += this.vx;
 		this.y += this.vy;
 		this.vx *= 0.990;
 		this.vy *= 0.990;
 		this.collision.x = this.x;
 		this.collision.y = this.y;
-		let inRange = collision(plrCollision, this.collision);
+		let inRange = collision(plrCollision, this.collision) || collision(swordhitbox, this.collision);
 		if (((f - this.start) >= 600 || inRange) && !this.boom) {
 			this.boom = true;
 			this.collision.w = 128;
