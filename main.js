@@ -17,7 +17,7 @@ let sfx = {};
 	'shatter.mp3',
 	'glass.mp3'
 ].forEach(async v => {
-	sfx[v] = await audio.decodeAudioData(await (await fetch(`sounds/${v}`)).arrayBuffer());
+	sfx[v] = await audio.decodeAudioData(await (await fetch(`assets/sounds/${v}`)).arrayBuffer());
 })
 
 // JAVASCRIPT GIVE US A NATIVE LERP FUNCTION PLEASEEEEEE
