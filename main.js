@@ -306,6 +306,7 @@ const boss = {
 	hp: 15000,
 	focus: 1,
 	rotation: 0,
+	iframes: 0,
 }
 
 let mx = 0;
@@ -418,6 +419,9 @@ class Particle {
 		const size = lerp(data.ss, data.es, ls);
 		ctx.beginPath();
 		rect(lerp(data.s.x, data.e?.x ?? data.s.x, lp), lerp(data.s.y, data.e?.y ?? data.s.y, lp), size, size * (data.sr ?? 1), true, true);
+		if (data.additive) {
+			ctx.globalCompositeOperation = 'lighter';
+		}
 		if (data.clr) {
 			ctx.fillStyle = data.clr;
 			ctx.fill();
@@ -426,6 +430,9 @@ class Particle {
 			ctx.strokeStyle = data.stroke;
 			ctx.lineWidth = data.lw;
 			ctx.stroke();
+		}
+		if (data.additive) {
+			ctx.globalCompositeOperation = 'source-over';
 		}
 	}
 }
@@ -464,6 +471,28 @@ function dmg(amt) {
 				easepos: 10, easesize: 10,
 				l: Math.random() * 1000 + 1000,
 				clr: "#fff"
+			}));
+		}
+	}
+}
+
+function dmgBoss(amt, crit) {
+	if (boss.iframes <= 0) {
+		boss.hp -= amt;
+		boss.iframes = 30;
+		ss += 50;
+
+		particles.add(new DmgIndicator(boss.x, boss.y, Math.floor(amt), crit, false));
+
+		for (let _ = 0; _ < 30; _++) {
+			const { x, y } = rp();
+			particles.add(new Particle({
+				s: { x: boss.x, y: boss.y },
+				e: { x: boss.x + x * 96, y: boss.y + y * 96 },
+				ss: 24 * Math.random(), es: 0,
+				easepos: 10, easesize: 10,
+				l: Math.random() * 1000 + 1000,
+				clr: "#8f8", additive: true
 			}));
 		}
 	}
@@ -714,6 +743,42 @@ class AttackShatter extends Attack {
 		}
 	}
 }
+// why not jsut reuse the attack class it works
+class TerraBeam extends Attack {
+	constructor(dir) {
+		super(70);
+		this.dir = dir;
+		this.x = plr.x;
+		this.y = plr.y;
+		this.dmg = 85;
+		this.speed = 1;
+		this.collision = {w: 75, h: 200, r: dir};
+	}
+
+	update() {
+		this.x += Math.cos(this.dir) * 15 * this.speed;
+		this.y -= Math.sin(this.dir) * 15 * this.speed;
+		this.collision.x = this.x;
+		this.collision.y = this.y;
+		this.speed *= 0.98;
+
+		if (boss.iframes <= 0 && collision(this.collision, bossCollision)) {
+			const crit = Math.random() <= 0.04;
+			// according to the wiki the Terra Blade projectile DOES deal 1.5x damage than swing
+			const dmg = this.dmg * (Math.random() * 0.15 + 1) * (crit ? 2 : 1) * 1.5; 
+			this.dmg *= 0.75; // but to balance it it gets reduced by 25% (the boss DOES sometimes re enter the hitbox)
+			dmgBoss(dmg, crit);
+		}
+	}
+
+	draw() {
+		if (lastDraw !== "terrabeam") {
+			ctx.fillStyle = "#8f8";
+			lastDraw = "terrabeam";
+		}
+		rotrect(this.collision);
+	}
+}
 
 class DmgIndicator {
 	constructor(x, y, amt, crit, ow) {
@@ -786,30 +851,21 @@ function physics() {
 		camera.zoom *= 1.02;
 		camera.zoom = Math.min(2, camera.zoom);
 	}
-	if (keysDown.has("KeyA")) {
-		plr.vx -= 1;
-	}
-	if (keysDown.has("KeyD")) {
-		plr.vx += 1;
-	}
-	if (keysDown.has("KeyW") || keysDown.has("Space")) {
-		plr.vy += 0.5;
-	}
-	if (keysDown.has("KeyS")) {
-		plr.vy -= 0.4;
-	}
+	if (keysDown.has("KeyA")) plr.vx -= 1;
+	if (keysDown.has("KeyD")) plr.vx += 1;
+	if (keysDown.has("KeyW") || keysDown.has("Space")) plr.vy += 0.5;
+	if (keysDown.has("KeyS")) plr.vy -= 0.4;
 	if (plr.willDash && plr.dashCD <= 0) {
 		plr.willDash = false;
 		plr.dashCD = 180;
 		plr.iframes = Math.max(plr.iframes, 25);
 	}
 
-	if (plr.attacking > 0) {
-		plr.attacking--;
-	}
+	if (plr.attacking > 0) plr.attacking--;
 	if (clicking && plr.attacking <= 0) {
 		plr.attacking = 25;
 		plr.facing = mx > 0;
+		attacks.add(new TerraBeam(Math.atan2(-my, mx)));
 	}
 
 	if (plr.dashCD > 0) {
@@ -851,6 +907,12 @@ function physics() {
 	swordhitbox.r = (2.5 - 3.25 * ((plr.attacking - 5) / 20)) * (plr.facing ? 1 : -1);
 	swordhitbox.x = plr.x + Math.sin(swordhitbox.r) * 72;
 	swordhitbox.y = plr.y + Math.cos(swordhitbox.r) * 72;
+	if (boss.iframes > 0) boss.iframes--;
+	if (boss.iframes <= 0 && plr.attacking > 5 && collision(swordhitbox, bossCollision)) {
+		const crit = Math.random() <= 0.04; // it just like terraria!!!
+		const dmg = 85 * (Math.random() * 0.15 + 1) * (crit ? 2 : 1);
+		dmgBoss(dmg, crit);
+	}
 
 	if (f % 12 === 0 && plr.vy !== 0) {
 		const { x, y } = rp();
