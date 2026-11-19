@@ -311,7 +311,7 @@ const plr = {
 	attacking: 0,
 	facing: false,
 }
-const maxBossHP = 15000;
+const maxBossHP = 55000;
 const boss = {
 	x: 0,
 	y: 0,
