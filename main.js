@@ -18,7 +18,8 @@ let imgs = {};
 	'shatter.mp3',
 	'glass.mp3',
 	'swing.wav',
-	'terra.wav'
+	'terra.wav',
+	'roar.mp3'
 ].forEach(async v => {
 	sfx[v] = await audio.decodeAudioData(await (await fetch(`assets/sounds/${v}`)).arrayBuffer());
 });
@@ -252,6 +253,7 @@ const camera = {
 	x: 0,
 	y: 0,
 	zoom: 1,
+	toBoss: 0
 }
 
 function getWorldPosition(pos) {
@@ -309,7 +311,7 @@ const plr = {
 	attacking: 0,
 	facing: false,
 }
-const maxBossHP = 65000;
+const maxBossHP = 15000;
 const boss = {
 	x: 0,
 	y: 0,
@@ -321,6 +323,7 @@ const boss = {
 	focus: 1,
 	rotation: 0,
 	iframes: 0,
+	reachedSecondPhase: false,
 }
 
 let mx = 0;
@@ -492,6 +495,9 @@ function dmg(amt) {
 
 function dmgBoss(amt, crit) {
 	if (boss.iframes <= 0) {
+		if (atk < 0) {
+			amt = 0;
+		}
 		boss.hp -= amt;
 		boss.iframes = 30;
 		boss.lastHit = performance.now();
@@ -871,6 +877,7 @@ class DmgIndicator {
 
 let atk = 0;
 let ss = 0;
+let ssAdd = 0;
 const swordhitbox = { w: 48, h: 128 };
 
 let attacks = new Set();
@@ -1005,12 +1012,43 @@ function physics() {
 		atk = atk % 2800;
 	}
 
-	if (atk == 0 || atk == 120 || atk == 240 || atk == 360) {
-		for (let i = 0; i < ((atk == 360) ? 50 : 125); i++) {
-			attacks.add(new AttackShatter(i, atk == 360));
+	const phase = boss.hp <= (maxBossHP / 2);
+	if (phase && !boss.reachedSecondPhase) {
+		boss.reachedSecondPhase = true;
+		atk = -1000;
+	}
+	ssAdd = ease(11, (atk + 810) / 50) - ease(11, (atk + 600) / 1250);
+	camera.toBoss = ease(11, (atk + 925) / 150) - ease(11, (atk + 200) / 150);
+
+	if (Math.random() <= ssAdd) {
+		const { x, y } = rpc();
+		particles.add(new Particle({
+			s: { x: boss.x + x, y: boss.y - 18 },
+			e: { x: boss.x + x + x * 1024, y: boss.y + y * 1024 },
+			ss: 48 * (1 - (1 - Math.random()) ** 3), es: 0,
+			easepos: 10, easesize: 0,
+			l: 500 + Math.random() * 1200,
+			clr: "#f006", additive: true
+		}));
+	}
+
+	if (atk == -800) {
+		sound('roar.mp3', null, 2);
+	}
+
+	if (atk < 0) {
+		focus = 0.01;
+	}
+
+	for (let n = 0; n <= 360; n += (phase ? 90 : 120)) {
+		if (atk == n) {
+			for (let i = 0; i < ((atk == 360) ? 50 : 125); i++) {
+				attacks.add(new AttackShatter(i, atk == 360));
+			}
+			break;
 		}
 	}
-	for (let n = 600; n < 1200; n += 150) {
+	for (let n = 600; n < 1200; n += (phase ? 100 : 150)) {
 		if (atk == n) {
 			boss.rotation += (Math.random() - 0.5) * 1;
 			attacks.add(new AttackCutter());
@@ -1023,11 +1061,11 @@ function physics() {
 		dist += 200;
 	}
 	if (atk > 1400 && atk < 1900) {
-		if (atk % 3 !== 0) attacks.add(new AttackBulletValley());
+		if (atk % 3 !== 0 || phase) attacks.add(new AttackBulletValley());
 		focus = 0.001;
 	}
-	for (let n = 0; n < 5; n++) {
-		if (atk == 2100 + n * 15) {
+	for (let n = 0; n < (phase ? 10 : 5); n++) {
+		if (atk == 2100 + n * (phase ? 10 : 15)) {
 			attacks.add(new AttackMissile());
 			break;
 		}
@@ -1047,8 +1085,8 @@ function physics() {
 	bossCollision.x = boss.x;
 	bossCollision.y = boss.y;
 
-	camera.x = plr.x + (Math.random() - 0.5) * ss;
-	camera.y = plr.y + (Math.random() - 0.5) * ss;
+	camera.x = lerp(plr.x, boss.x, camera.toBoss) + (Math.random() - 0.5) * (ss + ssAdd * 50);
+	camera.y = lerp(plr.y, boss.y, camera.toBoss) + (Math.random() - 0.5) * (ss + ssAdd * 50);
 
 	plrCollision.x = plr.x;
 	plrCollision.y = plr.y;
@@ -1143,7 +1181,7 @@ function draw() {
 				pepTalkInfo.line = 0;
 				pepTalkInfo.closed = false;
 				lastUpdate = performance.now();
-				atk = -600;
+				atk = -1000;
 				plr.hp = 100;
 				plr.x = plr.y = plr.vx = plr.vy = 0;
 				attacks.clear();
@@ -1195,7 +1233,7 @@ function draw() {
 					const iw = imgs['beam.png'].width * zoomMult / 1.75;
 					const ih = imgs['beam.png'].height * zoomMult / 1.75;
 					ctx.translate(
-						(plr.x + Math.sin(swordhitbox.r - (plr.facing ? 0.25 : -0.25)) * 96 - camera.x) * zoomMult + width / 2, 
+						(plr.x + Math.sin(swordhitbox.r - (plr.facing ? 0.25 : -0.25)) * 96 - camera.x) * zoomMult + width / 2,
 						-(plr.y + Math.cos(swordhitbox.r - (plr.facing ? 0.25 : -0.25)) * 96 - camera.y) * zoomMult + height / 2
 					);
 					ctx.rotate(swordhitbox.r - Math.PI * 0.5 * (plr.facing ? 1 : -1));
@@ -1229,7 +1267,14 @@ function draw() {
 			});
 
 			ctx.fillStyle = "#f00";
-			rect(boss.x - 12, boss.y + 18, 24, 36)
+			rect(boss.x - 12, boss.y + 18, 24, 36);
+			ctx.globalCompositeOperation = 'lighter';
+			ctx.fillStyle = "#f008";
+			rotrect({ x: boss.x, y: boss.y, w: 5000, h: 24 * ssAdd, r: now / 350 });
+			rotrect({ x: boss.x, y: boss.y, w: 5000, h: 24 * ssAdd, r: now / 350 + Math.PI * 0.5 });
+			rotrect({ x: boss.x, y: boss.y, w: 5000, h: 24 * ssAdd, r: -0.5 - now / 350 });
+			rotrect({ x: boss.x, y: boss.y, w: 5000, h: 24 * ssAdd, r: -0.5 - now / 350 + Math.PI * 0.5 });
+			ctx.globalCompositeOperation = 'source-over';
 
 			ctx.save();
 			ctx.beginPath();
