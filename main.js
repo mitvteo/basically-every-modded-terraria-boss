@@ -1173,6 +1173,16 @@ const keyOverlay = [
 	{ k: ['KeyD'], p: [2, 0] },
 ];
 
+const keyboardHints = [
+	'w/space - fly',
+	'a/d - move',
+	's - fast fall',
+	'a/d [double tap] or rmb - dash',
+	'lmb - attack',
+	'mouse - aim ranged attack',
+	'+/- - zoom in/out'
+]
+
 let lastFrame = performance.now();
 let lastUpdate = 0;
 function draw() {
@@ -1440,6 +1450,13 @@ function draw() {
 	if (keysDown.has("ControlLeft")) {
 		letter(boss.focus.toFixed(2), sizeMult * 15, sizeMult * 15, 0);
 	}
+
+	ctx.fillStyle = "#fff6";
+	ctx.textAlign = "right";
+	keyboardHints.forEach((v, i) => {
+		const l = keyboardHints.length - i - 1;
+		letter(v, width - sizeMult * 15, height - sizeMult * 30 - l * sizeMult * 30);
+	});
 
 	clicked = false;
 
