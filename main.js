@@ -1291,12 +1291,12 @@ function draw() {
 			ctx.globalAlpha = 1;
 
 			ctx.fillStyle = "#222";
-			rect(plr.x - 1600, -18, 3200, 1600);
+			rect(camera.x - 1600, -18, 3200, 1600);
 			ctx.fillStyle = "#333";
-			rect(plr.x - 1600, -18, 3200, 2);
+			rect(camera.x - 1600, -18, 3200, 2);
 			ctx.fillStyle = "#444";
 			for (let i = -50; i < 50; i++) {
-				rect((Math.floor(plr.x / 54) + i) * 54 - 1, -18, 2, 16);
+				rect((Math.floor(camera.x / 54) + i) * 54 - 1, -18, 2, 16);
 			}
 
 			if (plr.attacking > 5) {
