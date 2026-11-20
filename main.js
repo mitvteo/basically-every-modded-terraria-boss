@@ -19,7 +19,8 @@ let imgs = {};
 	'glass.mp3',
 	'swing.wav',
 	'terra.wav',
-	'roar.mp3'
+	'roar.mp3',
+	'implode.mp3'
 ].forEach(async v => {
 	sfx[v] = await audio.decodeAudioData(await (await fetch(`assets/sounds/${v}`)).arrayBuffer());
 });
@@ -643,6 +644,52 @@ class AttackBulletValley extends Attack {
 	}
 }
 
+class AttackSafeZone extends Attack {
+	constructor(x, y, i, size) {
+		super(360 + i);
+		this.x = x;
+		this.y = y;
+		this.size = size;
+		this.boom = false;
+		this.offset = i;
+	}
+
+	update() {
+		if (!this.boom && f > (this.offset + this.start + 240)) {
+			this.boom = true;
+			const dist = Math.hypot(this.x - plr.x, this.y - plr.y) * 15;
+			const vol = (1 / dist) * 1200 * 5;
+			sound('implode.mp3', null, Math.min(vol, 3));
+			sound('shatter.mp3', null, Math.min(vol / 2, 3));
+			const hit = collision(plrCollision, {x: this.x, y: this.y, w: this.size, h: this.size, r: 0});
+			if (hit) {
+				dmg(30);
+			}
+		}
+	}
+
+	draw() {
+		if (lastDraw !== "safezone") {
+			lastDraw = "safezone";
+			ctx.strokeStyle = "#fff";
+			ctx.fillStyle = "#fff";
+			ctx.lineWidth = 2;
+		}
+		if (!this.boom && f > (this.start + this.offset)) {
+			const t = (f - (this.start + this.offset)) / 240;
+			ctx.beginPath();
+			const s = ease(10, t * 3);
+			rotrect({x: this.x, y: this.y, w: (this.size - 32) * s, h: (this.size - 32) * s, r: ease(34, t * 3) * Math.PI * 0.5}, null, true);
+			ctx.stroke();
+		} else if (this.boom) {
+			const t = ((f - (this.start + this.offset)) - 240) / 60;
+			ctx.globalAlpha = 1 - ease(10, t);
+			rect(this.x, this.y, this.size, this.size, false, true);
+			ctx.globalAlpha = 1;
+		}
+	}
+}
+
 class AttackCutter extends Attack {
 	constructor(silent) {
 		super(300);
@@ -1009,7 +1056,7 @@ function physics() {
 
 	let focus = 1;
 	atk++;
-	if (atk > 2800) {
+	if (atk > 3800) {
 		atk = 0;
 		boss.roar = false;
 	}
@@ -1071,9 +1118,24 @@ function physics() {
 		if (atk % 3 !== 0 || phase) attacks.add(new AttackBulletValley());
 		focus = 0.001;
 	}
+
 	for (let n = 0; n < (phase ? 10 : 5); n++) {
 		if (atk == 2100 + n * (phase ? 10 : 15)) {
 			attacks.add(new AttackMissile());
+			break;
+		}
+	}
+
+	for (let n = 2250; n < 3400; n += (phase ? 260 : 340)) {
+		if (atk == n) {
+			const s = 300 + Math.random() * 100;
+			for (let x = -2600; x <= 2600; x += s) {
+				for (let y = 0; y < 4800; y += s) {
+					if (Math.random() < 0.75) {
+						attacks.add(new AttackSafeZone(x, y, Math.random() * 60, s));
+					}
+				}
+			}
 			break;
 		}
 	}
