@@ -20,7 +20,8 @@ let imgs = {};
 	'swing.wav',
 	'terra.wav',
 	'roar.mp3',
-	'implode.mp3'
+	'implode.mp3',
+	'final.mp3'
 ].forEach(async v => {
 	sfx[v] = await audio.decodeAudioData(await (await fetch(`assets/sounds/${v}`)).arrayBuffer());
 });
@@ -235,10 +236,11 @@ let dialogues = {
 		"Shall we try again?",
 	],
 	c: [
-		"Thank you, brave one.",
-		"The world is rescued from his oppression.",
-		"YOU WIN!",
-	]
+		"Let's not give up just yet." //ref
+	],
+	d: [
+		"One more chance?"
+	],
 }
 
 let pepTalk = true;
@@ -312,7 +314,7 @@ const plr = {
 	attacking: 0,
 	facing: false,
 }
-const maxBossHP = 55000;
+const maxBossHP = 30000;
 const boss = {
 	x: 0,
 	y: 0,
@@ -326,6 +328,7 @@ const boss = {
 	rotation: 0,
 	iframes: 0,
 	reachedSecondPhase: false,
+	reachedFinisher: false,
 }
 
 let mx = 0;
@@ -340,11 +343,13 @@ document.addEventListener('mousedown', e => {
 	} else if (e.button === 0) {
 		clicking = true;
 		clicked = true;
+		keysDown.add('LMB');
 	}
 });
 document.addEventListener('mouseup', e => {
 	if (e.button === 0) {
 		clicking = false;
+		keysDown.delete('LMB');
 	}
 });
 document.addEventListener('mousemove', e => {
@@ -382,16 +387,19 @@ document.addEventListener('keyup', e => {
 	keysDown.delete(e.code);
 });
 
-let musicToast = -100000;
+const bgmGain = audio.createGain();
+bgmGain.gain.value = 1;
+bgmGain.connect(audio.destination);
+
 async function startMusic(t) {
 	if (bgm) bgm.stop();
 	bgm = audio.createBufferSource();
 	await waitUntil(() => !!buffer);
 	bgm.buffer = buffer;
 	bgm.loop = true;
-	bgm.connect(audio.destination);
+	bgmGain.gain.value = 1;
+	bgm.connect(bgmGain);
 	bgm.start(t ?? 0);
-	musicToast = performance.now();
 }
 const sounds = new Set();
 function sound(n, t, v) {
@@ -401,7 +409,7 @@ function sound(n, t, v) {
 	s.buffer = sfx[n];
 	s.connect(g);
 	g.connect(audio.destination);
-	s.start(t ?? 0);
+	s.start(0, t ?? 0);
 	s.onended = () => {
 		sounds.delete(s);
 		s.disconnect();
@@ -460,6 +468,7 @@ const plrCollision = { x: plr.x, y: plr.y, w: 16, h: 24, r: 0 };
 const bossCollision = { x: plr.x, y: plr.y, w: 16, h: 24, r: 0 };
 let f = 0; // btw physics runs at 120 fps
 let lastDraw = undefined;
+let fin = false;
 
 class Attack {
 	constructor(lifetime) {
@@ -474,6 +483,7 @@ class Attack {
 
 function dmg(amt) {
 	if (plr.iframes <= 0) {
+		amt *= 0.75; // quick nerf
 		plr.hp -= amt;
 		plr.iframes = 120;
 		sound('glass.mp3', null, 6);
@@ -551,7 +561,7 @@ class AttackMissile extends Attack {
 		this.collision = { w: 0, h: 0, r: 0 };
 		this.boom = false;
 		ss += 50;
-		sound("shatter.mp3", audio.currentTime, 1);
+		sound("shatter.mp3", 0, 1);
 	}
 
 	update() {
@@ -585,7 +595,12 @@ class AttackMissile extends Attack {
 				}));
 			}
 			ss += 25;
-			sound("shatter.mp3", audio.currentTime, 1.5);
+			sound("shatter.mp3", 0, 1.5);
+			if (boss.reachedSecondPhase) {
+				for (let i = 0; i < 8; i++) {
+					attacks.add(new AttackBulletValley((i / 8) * Math.PI * 2, {x: this.x, y: this.y}));
+				}
+			}
 		}
 	}
 
@@ -594,7 +609,7 @@ class AttackMissile extends Attack {
 			lastDraw = "missile";
 		}
 		if (!this.boom) {
-			ctx.fillStyle = "#fff";
+			ctx.fillStyle = "#fb8";
 			ctx.strokeStyle = "#fff";
 
 			for (let _ = 0; _ < 2; _++) {
@@ -605,7 +620,7 @@ class AttackMissile extends Attack {
 					ss: 24 * Math.random(), es: 0,
 					easepos: 10, easesize: 10,
 					l: Math.random() * 1000 + 1000,
-					clr: "#fff8"
+					clr: "#fb88"
 				}));
 			}
 			rect(this.x, this.y, 24, 24, false, true);
@@ -615,12 +630,12 @@ class AttackMissile extends Attack {
 
 let bulletValleyRot = 0;
 class AttackBulletValley extends Attack {
-	constructor() {
+	constructor(force, pos) {
 		super(2000);
-		this.x = boss.x;
-		this.y = boss.y;
+		this.x = pos?.x ?? boss.x;
+		this.y = pos?.y ?? boss.y;
 		bulletValleyRot += 0.3 + Math.PI;
-		this.rot = (Math.random() > 0.9) ? (Math.random() * Math.PI * 2) : bulletValleyRot;
+		this.rot = force ?? ((Math.random() > 0.9) ? (Math.random() * Math.PI * 2) : bulletValleyRot);
 		this.hitbox = { w: 8, h: 8, r: 0 };
 	}
 
@@ -631,7 +646,7 @@ class AttackBulletValley extends Attack {
 		this.hitbox.y = this.y;
 		const hit = collision(plrCollision, this.hitbox);
 		if (hit) {
-			dmg(15);
+			dmg(14);
 		}
 	}
 
@@ -725,7 +740,7 @@ class AttackCutter extends Attack {
 			}
 			if (!this.silent) {
 				ss += 300;
-				sound("shatter.mp3", audio.currentTime, 3);
+				sound("shatter.mp3", 0, 3);
 			}
 		}
 	}
@@ -734,7 +749,6 @@ class AttackCutter extends Attack {
 		if (lastDraw !== "cutter") {
 			lastDraw = "cutter";
 		}
-		const { x, y } = getWorldPosition(this.x, this.y);
 		const t = (f - this.start) / 240;
 		if (t > 1) {
 			ctx.fillStyle = "#f55";
@@ -750,6 +764,69 @@ class AttackCutter extends Attack {
 			const o = { h: s1 * 96, w: s2 * 5000 };
 			for (let i = 0; i < this.amt; i++) {
 				rotrect(this.hitboxes[i], o);
+			}
+		}
+	}
+}
+
+class AttackFinisher extends Attack {
+	constructor() {
+		super(1500);
+		this.sr = Math.random() * Math.PI * 2;
+		this.amt = 8;
+		this.boom = false;
+		sound('final.mp3', 0.124, 2)
+		this.x = boss.x;
+		this.y = boss.y;
+		this.hitboxes = [];
+		for (let i = 0; i < this.amt; i++) {
+			this.hitboxes[i] = { x: this.x, y: this.y, w: 50000, h: 128, r: 0 };
+		}
+	}
+
+	update() {
+		const t = (f - this.start) / 120;
+		for (let i = 0; i < this.amt; i++) {
+			this.hitboxes[i].r = (Math.PI / this.amt) * i + this.sr + t * 0.2;
+		}
+		if (t > 5.5) {
+			ss += 10;
+			let hit = false;
+			for (let i = 0; i < this.amt; i++) {
+				if (collision(plrCollision, this.hitboxes[i])) hit = true;
+			}
+			if (hit) {
+				dmg(1000);
+			}
+			if (!this.boom) {
+				this.boom = true;
+				ss += 10000;
+			}
+			if (t > 12.5) fin = true;
+		}
+	}
+
+	draw() {
+		if (lastDraw !== "finisher") {
+			lastDraw = "finisher";
+		}
+		const t = (f - this.start) / 120;
+		if (t < 5.5) {
+			ctx.fillStyle = "#f008";
+			const s1 = ease(21, t / 4) - ease(14, (t - 4) / 1.5);
+			const o = { h: s1 * 128, w: 50000 };
+			for (let i = 0; i < this.amt; i++) {
+				rotrect(this.hitboxes[i], o);
+			}
+		} else {
+			const o = { h: 140, w: 50000 };
+			ctx.fillStyle = "#fff";
+			for (let i = 0; i < this.amt; i++) {
+				rotrect(this.hitboxes[i], o);
+			}
+			ctx.fillStyle = "#fff4";
+			for (let i = 0; i < 50; i++) {
+				rotrect({ x: this.x, y: this.y, w: 6, h: 50000, r: Math.random() * Math.PI * 2 });
 			}
 		}
 	}
@@ -780,7 +857,7 @@ class AttackShatter extends Attack {
 			const dist = Math.hypot(this.x - plr.x, this.y - plr.y) * 15;
 			const vol = (1 / dist) * (this.ult ? 2400 : 400) * 5;
 			ss += this.ult ? 5 : 1.5;
-			sound("shatter.mp3", audio.currentTime, Math.min(vol, 3));
+			sound("shatter.mp3", 0, Math.min(vol, 3));
 
 			for (let _ = 0; _ < 5; _++) {
 				const { x, y } = rp();
@@ -1088,61 +1165,88 @@ function physics() {
 	if (atk == -800) {
 		sound('roar.mp3', null, 2);
 	}
+	let dist = 0;
 
 	if (atk < 0) {
 		focus = 0.01;
 		boss.roar = true;
 	}
 
-	for (let n = 0; n <= 360; n += (phase ? 90 : 120)) {
-		if (atk == n) {
-			for (let i = 0; i < ((atk == 360) ? 50 : 125); i++) {
-				attacks.add(new AttackShatter(i, atk == 360));
-			}
-			break;
-		}
-	}
-	for (let n = 600; n < 1200; n += (phase ? 100 : 150)) {
-		if (atk == n) {
-			boss.rotation += (Math.random() - 0.5) * 1;
-			attacks.add(new AttackCutter());
-			attacks.add(new AttackCutter(), true);
-			break;
-		}
-	}
-	let dist = 0;
-	if (atk > 1300 && atk < 1900) {
-		dist += 200;
-	}
-	if (atk > 1400 && atk < 1900) {
-		if (atk % 3 !== 0 || phase) attacks.add(new AttackBulletValley());
-		focus = 0.001;
+	if (boss.hp <= 0 && !boss.reachedFinisher) {
+		boss.hp = 0;
+		boss.iframes = 1000;
+		boss.reachedFinisher = true;
+		atk = 0;
 	}
 
-	for (let n = 0; n < (phase ? 10 : 5); n++) {
-		if (atk == 2100 + n * (phase ? 10 : 15)) {
+	if (boss.reachedFinisher) {
+		bgmGain.gain.value = clamp(1 - atk / 800, 0, 1);
+		focus = 0;
+		if (atk == 480) {
+			attacks.add(new AttackFinisher());
+		}
+	} else {
+		if (boss.reachedSecondPhase && atk == 0) {
 			attacks.add(new AttackMissile());
-			break;
 		}
-	}
 
-	for (let n = 2250; n < 3400; n += (phase ? 260 : 340)) {
-		if (atk == n) {
-			const s = 300 + Math.random() * 100;
-			for (let x = -2600; x <= 2600; x += s) {
-				for (let y = 0; y < 4800; y += s) {
-					if (Math.random() < 0.75) {
-						attacks.add(new AttackSafeZone(x, y, Math.random() * 60, s));
+		for (let n = 0; n <= 360; n += (phase ? 90 : 120)) {
+			if (atk == n) {
+				boss.rotation += (Math.random() - 0.5) * 3;
+				for (let i = 0; i < ((atk == 360) ? 50 : 125); i++) {
+					attacks.add(new AttackShatter(i, atk == 360));
+				}
+				break;
+			}
+		}
+
+		if (boss.reachedSecondPhase && atk == 650) {
+			attacks.add(new AttackMissile());
+		}
+		for (let n = 600; n < 1200; n += (phase ? 100 : 150)) {
+			if (atk == n) {
+				boss.rotation += (Math.random() - 0.5) * 3;
+				attacks.add(new AttackCutter());
+				attacks.add(new AttackCutter(), true);
+				break;
+			}
+		}
+
+		if (atk == 1300) {
+			boss.rotation += (Math.random() - 0.5) * 3;
+		}
+		if (atk > 1300 && atk < 1900) {
+			dist += 200;
+		}
+		if (atk > 1400 && atk < 1900) {
+			if (atk % 3 !== 0 || phase) attacks.add(new AttackBulletValley());
+			focus = 0.001;
+		}
+
+		for (let n = 0; n < (phase ? 6 : 3); n++) {
+			if (atk == 2100 + n * (phase ? 10 : 15)) {
+				attacks.add(new AttackMissile());
+				break;
+			}
+		}
+
+		for (let n = 2250; n < 3400; n += (phase ? 260 : 340)) {
+			if (atk == n) {
+				const s = 300 + Math.random() * 100;
+				for (let x = -2600; x <= 2600; x += s) {
+					for (let y = 0; y < 4800; y += s) {
+						if (Math.random() < 0.75) {
+							attacks.add(new AttackSafeZone(x, y, Math.random() * 60, s));
+						}
 					}
 				}
+				break;
 			}
-			break;
 		}
 	}
+
 	boss.focus = lerp(boss.focus, focus, 0.01);
-
 	boss.rotation += (Math.random() - 0.5) * 0.05;
-
 	boss.hpLerp = lerp(boss.hpLerp, boss.hp, 0.05);
 
 	const targetx = plr.x + Math.cos(boss.rotation) * (320 + dist) + (Math.random() - 0.5) * 48;
@@ -1171,6 +1275,7 @@ const keyOverlay = [
 	{ k: ['KeyA'], p: [0, 0] },
 	{ k: ['KeyS'], p: [1, 0] },
 	{ k: ['KeyD'], p: [2, 0] },
+	{ k: ['LMB'], p: [2, 1] },
 ];
 
 const keyboardHints = [
@@ -1265,7 +1370,9 @@ function draw() {
 				atk = -1000;
 				ss = 0;
 				plr.hp = 100;
-				boss.x = boss.y = boss.vx = boss.vy = plr.x = plr.y = plr.vx = plr.vy = 0;
+				plr.iframes = boss.iframes = boss.x = boss.y = boss.vx = boss.vy = plr.x = plr.y = plr.vx = plr.vy = 0;
+				boss.reachedFinisher = false;
+				boss.reachedSecondPhase = false;
 				attacks.clear();
 				stopwatch = 0;
 			}
@@ -1281,7 +1388,7 @@ function draw() {
 		if (plr.hp <= 0) {
 			pepTalk = true;
 			pepTalkInfo.lineStart = now + 1000;
-			pepTalkInfo.content = dialogues.b;
+			pepTalkInfo.content = dialogues[['b', 'c', 'd'][Math.floor(Math.random() * 3)]];
 			ctx.fillStyle = "#fff";
 			ctx.fillRect(0, 0, width, height);
 
@@ -1460,7 +1567,11 @@ function draw() {
 
 	clicked = false;
 
-	requestAnimationFrame(draw);
+	if (!fin) {
+		requestAnimationFrame(draw);
+	} else {
+		document.getElementById("finish").classList.add('shown');
+	}
 }
 
 draw();

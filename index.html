@@ -9,20 +9,55 @@
 			font-family: "pixel";
 			src: url("JF-Dot-MPlus12.ttf");
 		}
-		html, body {
+
+		html,
+		body {
 			margin: 0;
 			padding: 0;
 			overflow: hidden;
 		}
+
 		#main {
 			width: 100vw;
 			height: 100vh;
+		}
+
+		#finish {
+			position: absolute;
+			top: 0;
+			left: 0;
+			width: 100vw;
+			height: 100vh;
+			object-fit: contain;
+			background: #000;
+			filter: brightness(1);
+			transform: scale(1);
+			display: none;
+			image-rendering: pixelated;
+		}
+
+		#finish.shown {
+			display: block;
+			animation: flash 3s cubic-bezier(0.19, 1, 0.22, 1);
+		}
+
+		@keyframes flash {
+			from {
+				filter: invert(0.4) brightness(2);
+				transform: scale(2);
+			}
+
+			to {
+				filter: invert(0) brightness(1);
+				transform: scale(1);
+			}
 		}
 	</style>
 	<script type="module" src="main.js" defer></script>
 </head>
 
 <body>
+	<img id="finish" src="betmb.png">
 	<canvas id="main"></canvas>
 </body>
 
