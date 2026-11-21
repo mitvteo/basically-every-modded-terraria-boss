@@ -245,7 +245,7 @@ let dialogues = {
 
 let pepTalk = true;
 let pepTalkInfo = {
-	line: 7,
+	line: 0,
 	lineStart: performance.now() + 1000,
 	content: dialogues.a,
 	closeTime: 0,
