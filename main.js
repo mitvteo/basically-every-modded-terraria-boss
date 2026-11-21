@@ -1370,7 +1370,8 @@ function draw() {
 				atk = -1000;
 				ss = 0;
 				plr.hp = 100;
-				plr.iframes = boss.iframes = boss.x = boss.y = boss.vx = boss.vy = plr.x = plr.y = plr.vx = plr.vy = 0;
+				plr.iframes = boss.iframes = boss.x = boss.vx = boss.vy = plr.x = plr.y = plr.vx = plr.vy = 0;
+				boss.y = 500;
 				boss.reachedFinisher = false;
 				boss.reachedSecondPhase = false;
 				attacks.clear();
